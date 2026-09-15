@@ -43,7 +43,9 @@ companion skill, [manuscript-editor](https://github.com/SwaroopShenoy/manuscript
   chapters get included, so long books don't balloon the prompt). Also writes the chapter's
   canonical label (deterministically parsed from its own heading line — zero LLM cost) to a
   `.label` sidecar file, so the same chapter is never logged under slightly different labels
-  by different personas or sessions.
+  by different personas or sessions. Accepts `--chapter-file` to reuse a chapter already fetched
+  once for the whole panel, instead of every persona re-invoking `nw_tool.py` (a fresh Python
+  process) to fetch identical text N times.
 - **`toolkit/record_reaction.py`** — parses a `KEY: value` reaction back into that persona's
   `living_reference.md` (new chapter-log entry + overwritten running-notes block).
 

@@ -79,18 +79,24 @@ windows instead of one context pretending to be several people.
 
 ### Spawning a persona's review subagent
 
-For each active panel persona:
+0. **Fetch the chapter once, not per persona.** Every persona reacting to the same chapter needs
+   identical source text — that's shared material, not opinion, so there's no isolation reason
+   to re-fetch it N times. Run `nw_tool.py get`/`flat-get` a single time into a shared scratch
+   file (e.g. `<scratch>\chapter.txt`) before touching any persona. Skipping this and letting
+   each persona's build step re-fetch independently is the main reason this used to "take a
+   while" — every `nw_tool.py` invocation is a fresh Python process paying full interpreter
+   startup and import cost, and N personas meant paying that N times for the same output.
 
-1. **Build the bundle** (mechanical, no tokens):
+1. **Build each persona's bundle** (mechanical, no tokens, and now fast — no subprocess left in
+   this step):
    ```
-   python toolkit\build_persona_prompt.py <persona_slug> <review_root> <chapter_source> <chapter_ref> --out <scratch>\<slug>_bundle.txt
+   python toolkit\build_persona_prompt.py <persona_slug> <review_root> <chapter_source> <chapter_ref> --chapter-file <scratch>\chapter.txt --out <scratch>\<slug>_bundle.txt
    ```
    `review_root` is the folder holding `_beta_reviews/` (the novelWriter project dir, or the
-   folder containing a flat manuscript). `chapter_source` is the same project dir for
-   novelWriter, or the `.md` file path for flat manuscripts — the script auto-detects which
-   `nw_tool.py` subcommand to use (and, for flat manuscripts, which heading level is the chapter
-   marker — `#` or `##`) from the source itself. Use `--history N` to cap how many prior
-   chapters get included if a persona's log has grown long (default 8).
+   folder containing a flat manuscript). `--chapter-file` points at the shared file from step 0
+   — pass it every time; without it, the script falls back to fetching the chapter itself, which
+   is correct but slower. Use `--history N` to cap how many prior chapters get included if a
+   persona's log has grown long (default 8).
 
    This also writes `<scratch>\<slug>_bundle.txt.label` — the chapter's own canonical label,
    deterministically read off its own heading line (zero LLM involvement). **Always use this
@@ -106,7 +112,13 @@ For each active panel persona:
    Pick the model deliberately per persona rather than defaulting to the heaviest one: a
    lighter/faster model is plenty for something like the teen personas' gut reactions, while
    `craft_critic` (Elsa) benefits from a stronger model since her whole point is noticing things
-   the others don't. Launch all active personas' subagents in parallel, in the same message.
+   the others don't.
+
+   **"In parallel" means literally one message with multiple `Agent` tool-use blocks in it, not
+   one `Agent` call per message even sent back-to-back.** Separate messages run sequentially no
+   matter how quickly they're issued — the harness only parallelizes tool calls that arrive
+   together in the same turn. If reviewing a 3-persona panel, that single message should contain
+   three `Agent` invocations, not three consecutive tool calls across three turns.
 
 3. **Record the result** (mechanical, no tokens):
    ```
@@ -118,7 +130,8 @@ For each active panel persona:
 
 Run step 2's subagents in the background (default) when reviewing many personas/chapters at
 once so the user can keep working; run in the foreground only if the next step genuinely
-depends on the result immediately.
+depends on the result immediately (e.g. this is the only thing happening right now and the
+results are needed to answer the user).
 
 ### Long-lived vs ad hoc
 
@@ -151,15 +164,34 @@ random selector.
 
 ## Per-chapter loop
 
-For each active panel persona, run the build → generate → record sequence above. Build all the
-bundles first (cheap, sequential is fine), then launch all the generation subagents together in
-one parallel batch, then record each as its subagent reports back. Once all personas are
-recorded, present all their reactions together to the user, clearly labeled by name — no need
-to drip-feed one persona's take before the others are in, since isolation is already guaranteed
-by construction at that point.
+1. Fetch the chapter once (step 0 above).
+2. Build every active persona's bundle (step 1) — cheap, sequential is fine, no subprocess left
+   in this step once `--chapter-file` is used.
+3. Launch every persona's generation subagent **together, in one message** (step 2) — this is
+   the step that actually costs time and tokens, so it's the one that must be truly parallel.
+4. Record each persona's result as its subagent reports back (step 3).
+5. Present all personas' reactions together, per the format below — don't drip-feed one
+   persona's take before the others are in, since isolation is already guaranteed by
+   construction at that point.
 
 ## Output style
 
-Keep it to the point, matching how the user asked for this: short in-character reactions and a
-rating, not long-form analysis. The `living_reference.md` files are the persistent record —
-there's no need for a separate compiled review file per chapter unless the user asks for one.
+Keep it to the point: short in-character reactions and a rating, not long-form analysis. Use
+this exact shape for presenting a chapter's panel results, one block per persona, in the same
+order the panel was selected:
+
+```
+### <Name> — <label> — <RATING>
+"<REACTION, verbatim>"
+
+**Liked:** <LIKED>
+**Didn't land:** <DISLIKED>
+**Watching for:** <PREDICTION>
+```
+
+Skip empty/"none" fields rather than printing them (e.g. drop the "Watching for" line entirely
+if PREDICTION was "none yet"). After all persona blocks, one short closing line is fine if there's
+a genuinely interesting split (e.g. "Elsa and Wilson landed in very different places on the
+pacing here") — don't manufacture a synthesis if there isn't one. The `living_reference.md`
+files are the persistent record — there's no need for a separate compiled review file per
+chapter unless the user asks for one.

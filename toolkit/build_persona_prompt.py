@@ -7,7 +7,7 @@ half of the skill, kept separate so the actual reaction-writing step is a single
 text-in/text-out call (any model, any harness), not something that needs Read/Write/Bash access.
 
 Usage:
-  python build_persona_prompt.py <persona_slug> <review_root> <chapter_source> <chapter_ref> [--history N] [--out FILE]
+  python build_persona_prompt.py <persona_slug> <review_root> <chapter_source> <chapter_ref> [--history N] [--out FILE] [--chapter-file FILE]
 
   <persona_slug>     one of toolkit/personas/*.md, e.g. teen_male
   <review_root>      folder containing (or to contain) _beta_reviews/ - the novelWriter project
@@ -19,6 +19,12 @@ Usage:
   --history N          how many most-recent chapter-log entries to include (default 8) - the
                       Running Notes block is always included in full regardless
   --out FILE           write the bundle to a file instead of stdout
+  --chapter-file FILE  reuse already-fetched chapter text instead of shelling out to nw_tool.py
+                      again. Every persona reacting to the same chapter needs the identical
+                      text (that's not a bias risk - it's the shared source material, not
+                      reading history/opinions), so when running the panel, fetch the chapter
+                      ONCE up front and pass it to every persona's build call with this flag -
+                      avoids N redundant Python-subprocess cold starts for identical output.
 
 When --out is used, the chapter's own canonical label (its first heading line, whatever level
 it's at, hashes stripped) is also written to "<FILE>.label" - a deterministic, zero-token
@@ -147,6 +153,7 @@ def main():
     ap.add_argument("chapter_ref")
     ap.add_argument("--history", type=int, default=8)
     ap.add_argument("--out")
+    ap.add_argument("--chapter-file")
     args = ap.parse_args()
 
     card_path = PERSONAS_DIR / f"{args.persona_slug}.md"
@@ -162,7 +169,10 @@ def main():
         )
     history_text = trim_history(lr_path.read_text(encoding="utf-8-sig"), args.history)
 
-    chapter_text = fetch_chapter(args.chapter_source, args.chapter_ref)
+    if args.chapter_file:
+        chapter_text = Path(args.chapter_file).read_text(encoding="utf-8-sig").strip()
+    else:
+        chapter_text = fetch_chapter(args.chapter_source, args.chapter_ref)
     chapter_label = extract_chapter_label(chapter_text, fallback=args.chapter_ref)
 
     bundle = (
