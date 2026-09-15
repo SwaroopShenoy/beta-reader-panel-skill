@@ -11,9 +11,20 @@ the others. This is **reader reaction, not editing** — no line edits, no prose
 prescriptions. If the user wants that, point them to the `manuscript-editor` skill instead.
 
 Toolkit lives in this skill's own folder: `toolkit/select_panel.py`, `toolkit/personas/*.md`,
-`toolkit/living_reference_template.md`. Reads manuscripts using the `manuscript-editor` skill's
+`toolkit/living_reference_template.md`, `toolkit/build_persona_prompt.py`,
+`toolkit/record_reaction.py`. Reads manuscripts using the `manuscript-editor` skill's
 `nw_tool.py` (`$env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\nw_tool.py`) — this
 skill never writes back to the manuscript itself, only reads chapters.
+
+**Token/tool-agnosticism note:** `build_persona_prompt.py` and `record_reaction.py` do all the
+mechanical work (assembling context, parsing output, updating files) as plain deterministic
+Python — zero tokens, and they don't care what generates the reaction in between. The only LLM
+call in the loop is a single text-in/text-out step: feed it the bundle, get back the ten `KEY:
+value` lines. That step doesn't need Read/Write/Bash access at all, which means it's not tied to
+a full agentic tool-use loop — it can run as a lean subagent, a raw API call, or a different
+model/harness entirely, with no change to the skill's logic. Don't hand a persona's turn to a
+heavyweight general-purpose agent that re-reads files and figures out formatting itself — that
+pays the full agent tool-belt overhead for work the scripts already do for free.
 
 ## The hard rule: real isolation, not just discipline
 
@@ -30,51 +41,52 @@ the other personas or their reactions — that's what actually gives you separat
 windows instead of one context pretending to be several people.
 
 1. **Never let one persona's subagent see another's `living_reference.md`, reaction, or
-   existence.** Each subagent's prompt contains only: its own persona card, its own
-   `living_reference.md` contents so far, and the new chapter text. Nothing about the panel,
-   nothing about other readers.
-2. **Launch all active personas' subagents in parallel** (one `Agent` tool call per persona, all
-   in the same message) rather than sequentially — this is both faster and reinforces that
-   they're independent, not a relay.
-3. **Never reveal future chapters to a persona.** Each subagent only gets the one chapter it's
-   reviewing plus its own prior chapter log — never anything later in the book.
+   existence.** `build_persona_prompt.py` already guarantees this — its output bundle only ever
+   contains one persona's own card and own history — so never paste a second persona's
+   information into a bundle by hand, and never mention the panel or other readers when
+   spawning the generation subagent.
+2. **Launch all active personas' generation subagents in parallel** (one `Agent` call per
+   persona, same message) rather than sequentially.
+3. **Never reveal future chapters to a persona.** Each bundle only covers the one chapter being
+   reviewed plus that persona's own prior chapter log — never anything later in the book.
 
 ### Spawning a persona's review subagent
 
-For each active panel persona, use the `Agent` tool (`subagent_type: general-purpose`, since it
-needs Read/Write/Bash) with a prompt built from this shape — fill in the bracketed parts, don't
-mention any other persona anywhere in it:
+For each active panel persona:
 
-```
-You are role-playing as a specific beta reader reacting to one chapter of a manuscript, as
-part of an isolated multi-reader panel. You must not reference or speculate about any other
-reader — you don't know they exist.
+1. **Build the bundle** (mechanical, no tokens):
+   ```
+   python toolkit\build_persona_prompt.py <persona_slug> <review_root> <chapter_source> <chapter_ref> --out <scratch>\<slug>_bundle.txt
+   ```
+   `review_root` is the folder holding `_beta_reviews/` (the novelWriter project dir, or the
+   folder containing a flat manuscript). `chapter_source` is the same project dir for
+   novelWriter, or the `.md` file path for flat manuscripts — the script auto-detects which
+   `nw_tool.py` subcommand to use from whether that path is a directory or a file. Use
+   `--history N` to cap how many prior chapters get included if a persona's log has grown long
+   (default 8 — raise or lower depending on the book's length and how much continuity a
+   given chapter needs).
 
-1. Read your persona card: [full contents of toolkit/personas/<slug>.md]
-2. Read your own reading history so far (if it exists):
-   [path to <manuscript>/_beta_reviews/<slug>/living_reference.md]
-3. Read the new chapter (read-only):
-   python "[path to manuscript-editor toolkit]\nw_tool.py" get "[manuscript_dir]" [chapter handle]
-   (or flat-get for a flat-markdown manuscript)
-4. Write your honest, in-character reaction to this chapter only — gut reaction, what landed,
-   what didn't, confusion, a prediction if you have one. Keep it to a short paragraph or two,
-   not a long analysis. This is a reader's reaction, not an editor's critique.
-5. Append it to your own living_reference.md under `## Chapter log`, in this format:
-   ### Ch [N] — [title]
-   Reaction: ...
-   Liked: ...
-   Confused/disliked: ...
-   Prediction: ...
-   Rating: X/10
-   Then overwrite the `## Running notes` block at the top with your current state (vibe,
-   favorite/least-favorite character, active theories, open questions) — it reflects current
-   state, it doesn't accumulate.
-6. Report back just your final in-character reaction text, nothing else.
-```
+2. **Get the reaction generated** — this is the one and only LLM step, and it should be as lean
+   as possible: a subagent (`Agent` tool) given *only* the bundle file's contents as its prompt,
+   asked to reply with exactly the ten `KEY: value` lines the bundle's instructions specify, and
+   nothing else. It needs no tools at all beyond producing that text — don't give it a
+   `general-purpose` agent's full Read/Write/Bash belt for a job that's pure text generation.
+   Pick the model deliberately per persona rather than defaulting to the heaviest one: a
+   lighter/faster model is plenty for something like the teen personas' gut reactions, while
+   `craft_critic` (Elsa) benefits from a stronger model since her whole point is noticing things
+   the others don't. Launch all active personas' subagents in parallel, in the same message.
 
-Run these in the background (default) when reviewing many personas/chapters at once so the
-user can keep working; run in the foreground only if the next step genuinely depends on the
-result immediately.
+3. **Record the result** (mechanical, no tokens):
+   ```
+   python toolkit\record_reaction.py <persona_slug> <review_root> "<chapter_label>" <scratch>\<slug>_reaction.txt
+   ```
+   where `<slug>_reaction.txt` holds the raw `KEY: value` text the subagent returned. This
+   parses it and updates that persona's `living_reference.md` — both the new chapter-log entry
+   and the overwritten Running Notes block — without spending any tokens on formatting.
+
+Run step 2's subagents in the background (default) when reviewing many personas/chapters at
+once so the user can keep working; run in the foreground only if the next step genuinely
+depends on the result immediately.
 
 ### Long-lived vs ad hoc
 
@@ -107,14 +119,12 @@ random selector.
 
 ## Per-chapter loop
 
-1. **Pull the chapter fresh** using `nw_tool.py get`/`flat-get` (read-only — same detection
-   logic as `manuscript-editor`: novelWriter project vs flat `.md`) — or just pass the handle
-   and let each subagent pull it themselves, since they need shell access anyway.
-2. **Spawn one subagent per active panel persona in parallel**, per the template above.
-3. **Wait for all subagents to report back**, then present all personas' reactions together to
-   the user, clearly labeled by name. Don't relay one persona's reaction to the user before the
-   others are in — there's no isolation risk at that point (the reactions are already fixed),
-   but it reads better as one panel update than a drip feed.
+For each active panel persona, run the build → generate → record sequence above. Build all the
+bundles first (cheap, sequential is fine), then launch all the generation subagents together in
+one parallel batch, then record each as its subagent reports back. Once all personas are
+recorded, present all their reactions together to the user, clearly labeled by name — no need
+to drip-feed one persona's take before the others are in, since isolation is already guaranteed
+by construction at that point.
 
 ## Output style
 

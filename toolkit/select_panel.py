@@ -41,7 +41,7 @@ def main():
 
     if panel_path.exists():
         print("Panel already selected for this manuscript:")
-        print(panel_path.read_text(encoding="utf-8"))
+        print(panel_path.read_text(encoding="utf-8-sig"))
         return
 
     count = int(sys.argv[2]) if len(sys.argv) > 2 else random.choice([2, 3])
@@ -63,7 +63,7 @@ def main():
     panel_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     template_path = Path(__file__).parent / "living_reference_template.md"
-    template_text = template_path.read_text(encoding="utf-8")
+    template_text = template_path.read_text(encoding="utf-8-sig")
 
     for p in panel:
         persona_dir = reviews_dir / p["slug"]

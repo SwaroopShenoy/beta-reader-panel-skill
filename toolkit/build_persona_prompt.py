@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""
+build_persona_prompt.py - assemble everything one persona needs to react to one chapter into
+a single plain-text bundle: persona card + their trimmed reading history + the chapter text +
+fixed output-format instructions. Pure file I/O, no LLM call here - this is the "mechanical"
+half of the skill, kept separate so the actual reaction-writing step is a single tool-agnostic
+text-in/text-out call (any model, any harness), not something that needs Read/Write/Bash access.
+
+Usage:
+  python build_persona_prompt.py <persona_slug> <review_root> <chapter_source> <chapter_ref> [--history N] [--out FILE]
+
+  <persona_slug>     one of toolkit/personas/*.md, e.g. teen_male
+  <review_root>      folder containing (or to contain) _beta_reviews/ - the novelWriter project
+                      dir, or the folder holding a flat .md manuscript
+  <chapter_source>    where the chapter text actually lives: same as review_root for a
+                      novelWriter project, or the path to the .md file for a flat manuscript
+  <chapter_ref>       handle/title (novelWriter) or heading substring (flat) identifying the
+                      chapter
+  --history N          how many most-recent chapter-log entries to include (default 8) - the
+                      Running Notes block is always included in full regardless
+  --out FILE           write the bundle to a file instead of stdout
+"""
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+TOOLKIT_DIR = Path(__file__).parent
+PERSONAS_DIR = TOOLKIT_DIR / "personas"
+NW_TOOL_PATH = Path(
+    os.environ.get(
+        "NW_TOOL_PATH",
+        Path(os.environ.get("USERPROFILE", str(Path.home())))
+        / ".claude" / "skills" / "manuscript-editor" / "toolkit" / "nw_tool.py",
+    )
+)
+
+INSTRUCTIONS = """\
+=== INSTRUCTIONS ===
+You are role-playing as this specific beta reader reacting to the chapter above. You do not
+know any other reader exists - do not reference or imagine other opinions. React only to this
+one chapter, honestly, in character. This is a reader's gut reaction, not an editor's critique
+- no line edits, no prose fixes, no craft prescriptions.
+
+Reply with ONLY the following fields, each as "KEY: value" on its own line (a value may wrap
+onto the next line as long as it doesn't start with another KEY: - just keep each field to a
+short paragraph, not an essay):
+
+REACTION: <2-4 sentences, your honest in-character reaction to this chapter>
+LIKED: <what worked for you>
+DISLIKED: <what didn't, confused you, or annoyed you - "nothing" is a fine answer>
+PREDICTION: <a theory or expectation, if you have one - "none yet" is fine>
+RATING: <X/10>
+VIBE: <your current one-line overall feeling about the book so far>
+FAVORITE: <favorite character so far, if any>
+LEAST_FAVORITE: <least favorite / most annoying character, if any>
+THEORIES: <your active theories about where this is going, one line>
+OPEN_QUESTIONS: <what you're still wondering about, one line>
+
+Nothing else - no preamble, no markdown headers, just those ten lines.
+"""
+
+
+def fetch_chapter(chapter_source: str, chapter_ref: str) -> str:
+    src = Path(chapter_source)
+    if src.is_dir():
+        cmd = ["python", str(NW_TOOL_PATH), "get", str(src), chapter_ref]
+    elif src.is_file():
+        cmd = ["python", str(NW_TOOL_PATH), "flat-get", str(src), chapter_ref]
+    else:
+        sys.exit(f"chapter_source not found: {chapter_source}")
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    if result.returncode != 0:
+        sys.exit(f"nw_tool.py failed:\n{result.stderr}")
+    return result.stdout.strip()
+
+
+def trim_history(living_reference_text: str, history_n: int) -> str:
+    """Keep the Running Notes block in full, and only the most recent N chapter-log entries."""
+    if "## Chapter log" not in living_reference_text:
+        return living_reference_text
+
+    head, _, log = living_reference_text.partition("## Chapter log")
+    entries = [e for e in log.split("\n### ") if e.strip()]
+    entries = ["### " + e if not e.startswith("### ") else e for e in entries]
+    trimmed = entries[-history_n:] if history_n > 0 else entries
+    omitted = len(entries) - len(trimmed)
+
+    note = ""
+    if omitted > 0:
+        note = f"\n_(earlier {omitted} chapter entr{'y' if omitted == 1 else 'ies'} omitted for length)_\n"
+
+    return head + "## Chapter log\n" + note + "\n".join(trimmed)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("persona_slug")
+    ap.add_argument("review_root")
+    ap.add_argument("chapter_source")
+    ap.add_argument("chapter_ref")
+    ap.add_argument("--history", type=int, default=8)
+    ap.add_argument("--out")
+    args = ap.parse_args()
+
+    card_path = PERSONAS_DIR / f"{args.persona_slug}.md"
+    if not card_path.exists():
+        sys.exit(f"Unknown persona: {args.persona_slug} (no {card_path})")
+    card_text = card_path.read_text(encoding="utf-8-sig").strip()
+
+    lr_path = Path(args.review_root) / "_beta_reviews" / args.persona_slug / "living_reference.md"
+    if not lr_path.exists():
+        sys.exit(
+            f"No living_reference.md for {args.persona_slug} at {lr_path} - "
+            f"run select_panel.py first."
+        )
+    history_text = trim_history(lr_path.read_text(encoding="utf-8-sig"), args.history)
+
+    chapter_text = fetch_chapter(args.chapter_source, args.chapter_ref)
+
+    bundle = (
+        "=== PERSONA CARD ===\n" + card_text + "\n\n"
+        "=== YOUR READING HISTORY SO FAR ===\n" + history_text.strip() + "\n\n"
+        "=== NEW CHAPTER TO REACT TO ===\n" + chapter_text + "\n\n"
+        + INSTRUCTIONS
+    )
+
+    if args.out:
+        Path(args.out).write_text(bundle, encoding="utf-8")
+        print(f"Bundle written to {args.out} ({len(bundle)} chars)")
+    else:
+        sys.stdout.write(bundle)
+
+
+if __name__ == "__main__":
+    main()
