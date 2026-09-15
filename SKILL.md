@@ -26,6 +26,33 @@ model/harness entirely, with no change to the skill's logic. Don't hand a person
 heavyweight general-purpose agent that re-reads files and figures out formatting itself — that
 pays the full agent tool-belt overhead for work the scripts already do for free.
 
+## Cold start: ready to review by the user's 2nd message
+
+When this skill is invoked without a manuscript already established in the conversation, the
+whole setup has to fit in one round trip — don't turn this into a multi-question intake form.
+
+1. **Your first reply asks exactly one thing**: which manuscript, and where it lives (a path to
+   the novelWriter project folder, or to the flat `.md` file). If you already know this from
+   context — the user named a project you have memory of, or one was just discussed — skip the
+   question entirely and treat it as already answered; don't ask something you can already infer.
+   If you're aware of a known manuscripts folder for this user, glance at it and offer a short
+   list of likely candidates rather than a blank "where is it?" — faster to answer than free text.
+2. **The moment you have the manuscript** (the user's next message, at the latest), do
+   everything below in that same turn, with no further questions unless something is genuinely
+   ambiguous (the name matches more than one manuscript, or the path doesn't exist):
+   - Resolve the manuscript type the same way `nw_tool.py` does (directory with `nwProject.nwx`
+     vs a `.md` file).
+   - Run `select_panel.py` against it — picks a panel if none exists yet for this manuscript,
+     or reports the existing one if it's already set up.
+   - Pick the starting chapter: use whatever the user named, or default to the manuscript's own
+     first chapter (`list`/`flat-list`) and just say plainly that's where you're starting — a
+     one-line thing to correct, not a blocking question.
+   - Immediately run the full build → generate → record loop (below) for that chapter across
+     the selected panel, and present the results.
+
+No "should I start?", no "does this panel look right?" checkpoint in between — panel selection
+and the first chapter's reviews happen in the same turn once the manuscript is known.
+
 ## The hard rule: real isolation, not just discipline
 
 Each panel member has their own private `living_reference.md` under

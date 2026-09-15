@@ -70,6 +70,11 @@ Claude Code auto-discovers skills under `~/.claude/skills/` — no further setup
 
 > "Get the beta panel's reactions to chapter 3 of \<project\>"
 
+Cold start is a two-message handshake, not an intake form: the first reply asks only which
+manuscript (skipped if already obvious from context); the moment that's answered, panel
+selection and the first chapter's full round of reviews happen in that same turn — no separate
+"does this panel look right?" checkpoint in between.
+
 First run picks 2-3 random readers and locks them in for that manuscript. Each subsequent
 chapter, every panel member reacts independently, in character, based only on what they've
 "read" so far — then their reaction is logged to their own private file under
