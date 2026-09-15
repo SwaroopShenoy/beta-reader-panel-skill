@@ -65,6 +65,14 @@ LEAST_FAVORITE: <least favorite / most annoying character, if any>
 THEORIES: <your active theories about where this is going, one line>
 OPEN_QUESTIONS: <what you're still wondering about, one line>
 
+THEORIES and OPEN_QUESTIONS are your long-range memory, not just reactions to this chapter -
+they're the only thing carried forward in full no matter how many chapters pass (your older
+chapter-by-chapter notes get condensed to titles only after a while). So: don't drop something
+from these two fields just because it's been several chapters since it came up - keep tracking
+anything genuinely still unresolved, however old, until it actually pays off or is confirmed
+abandoned. If this new chapter resolves or clearly references something you were tracking,
+say so explicitly in REACTION as a callback, not as if it's new.
+
 Nothing else - no preamble, no markdown headers, just those ten lines.
 """
 
@@ -98,21 +106,37 @@ def fetch_chapter(chapter_source: str, chapter_ref: str) -> str:
 
 
 def trim_history(living_reference_text: str, history_n: int) -> str:
-    """Keep the Running Notes block in full, and only the most recent N chapter-log entries."""
+    """Keep the Running Notes block in full always (that's where long-range threads should
+    live - see the persona instructions), the most recent N chapter-log entries in full detail,
+    and a compact title+rating digest of everything older than that - so a chapter that pays
+    off something planted many chapters back is still recognizable as a callback, not a
+    surprise, even though the full text of that old chapter isn't being resent every time."""
     if "## Chapter log" not in living_reference_text:
         return living_reference_text
 
     head, _, log = living_reference_text.partition("## Chapter log")
     entries = [e for e in log.split("\n### ") if e.strip()]
     entries = ["### " + e if not e.startswith("### ") else e for e in entries]
-    trimmed = entries[-history_n:] if history_n > 0 else entries
-    omitted = len(entries) - len(trimmed)
 
-    note = ""
-    if omitted > 0:
-        note = f"\n_(earlier {omitted} chapter entr{'y' if omitted == 1 else 'ies'} omitted for length)_\n"
+    if history_n <= 0 or len(entries) <= history_n:
+        return head + "## Chapter log\n" + "\n".join(entries)
 
-    return head + "## Chapter log\n" + note + "\n".join(trimmed)
+    omitted, recent = entries[:-history_n], entries[-history_n:]
+    digest_lines = []
+    for e in omitted:
+        lines = e.splitlines()
+        heading = lines[0][len("### "):].strip() if lines else "?"
+        rating = next((l.split(":", 1)[1].strip() for l in lines if l.startswith("Rating:")), "?")
+        digest_lines.append(f"- {heading} (rated {rating})")
+
+    digest = (
+        f"_Earlier chapters, condensed to title + rating only so this bundle stays small - if "
+        f"this new chapter seems to be paying off or referencing one of these, treat it as a "
+        f"real callback, not a fresh idea:_\n" + "\n".join(digest_lines) + "\n\n"
+        f"_Full detail below is only the {len(recent)} most recent chapter(s):_\n"
+    )
+
+    return head + "## Chapter log\n" + digest + "\n".join(recent)
 
 
 def main():

@@ -52,7 +52,7 @@ def render_running_notes(v: dict) -> str:
 
 def render_chapter_entry(chapter_label: str, v: dict) -> str:
     return (
-        f"### Ch {chapter_label}\n"
+        f"### {chapter_label}\n"
         f"Reaction: {v['REACTION']}\n"
         f"Liked: {v['LIKED']}\n"
         f"Confused/disliked: {v['DISLIKED']}\n"
