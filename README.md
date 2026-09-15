@@ -40,7 +40,10 @@ companion skill, [manuscript-editor](https://github.com/SwaroopShenoy/manuscript
 - **`toolkit/living_reference_template.md`** — the per-persona chapter-log template.
 - **`toolkit/build_persona_prompt.py`** — assembles one persona's card + trimmed reading
   history + the new chapter into a single prompt bundle (`--history N` caps how many past
-  chapters get included, so long books don't balloon the prompt).
+  chapters get included, so long books don't balloon the prompt). Also writes the chapter's
+  canonical label (deterministically parsed from its own heading line — zero LLM cost) to a
+  `.label` sidecar file, so the same chapter is never logged under slightly different labels
+  by different personas or sessions.
 - **`toolkit/record_reaction.py`** — parses a `KEY: value` reaction back into that persona's
   `living_reference.md` (new chapter-log entry + overwritten running-notes block).
 

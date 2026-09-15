@@ -19,9 +19,16 @@ Usage:
   --history N          how many most-recent chapter-log entries to include (default 8) - the
                       Running Notes block is always included in full regardless
   --out FILE           write the bundle to a file instead of stdout
+
+When --out is used, the chapter's own canonical label (its first heading line, whatever level
+it's at, hashes stripped) is also written to "<FILE>.label" - a deterministic, zero-token
+derivation with no LLM involvement, meant to be read back and passed straight into
+record_reaction.py's <chapter_label> argument so the same book's chapter never gets logged
+under slightly different labels across personas or sessions.
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -60,6 +67,20 @@ OPEN_QUESTIONS: <what you're still wondering about, one line>
 
 Nothing else - no preamble, no markdown headers, just those ten lines.
 """
+
+
+def extract_chapter_label(chapter_text: str, fallback: str) -> str:
+    """Deterministically derive a canonical chapter label from the chapter's own leading
+    heading line (e.g. '## IX - Torrid' -> 'IX - Torrid', '# Chapter 2' -> 'Chapter 2').
+    Pure string parsing, no LLM call - falls back to the raw chapter_ref if the chapter text
+    doesn't start with a markdown heading for some reason."""
+    for line in chapter_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = re.match(r"^#{1,6}\s+(.*\S)\s*$", stripped)
+        return m.group(1) if m else fallback
+    return fallback
 
 
 def fetch_chapter(chapter_source: str, chapter_ref: str) -> str:
@@ -118,6 +139,7 @@ def main():
     history_text = trim_history(lr_path.read_text(encoding="utf-8-sig"), args.history)
 
     chapter_text = fetch_chapter(args.chapter_source, args.chapter_ref)
+    chapter_label = extract_chapter_label(chapter_text, fallback=args.chapter_ref)
 
     bundle = (
         "=== PERSONA CARD ===\n" + card_text + "\n\n"
@@ -128,7 +150,10 @@ def main():
 
     if args.out:
         Path(args.out).write_text(bundle, encoding="utf-8")
+        label_path = Path(str(args.out) + ".label")
+        label_path.write_text(chapter_label, encoding="utf-8")
         print(f"Bundle written to {args.out} ({len(bundle)} chars)")
+        print(f"Chapter label ({label_path}): {chapter_label}")
     else:
         sys.stdout.write(bundle)
 

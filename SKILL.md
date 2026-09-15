@@ -61,10 +61,15 @@ For each active panel persona:
    `review_root` is the folder holding `_beta_reviews/` (the novelWriter project dir, or the
    folder containing a flat manuscript). `chapter_source` is the same project dir for
    novelWriter, or the `.md` file path for flat manuscripts — the script auto-detects which
-   `nw_tool.py` subcommand to use from whether that path is a directory or a file. Use
-   `--history N` to cap how many prior chapters get included if a persona's log has grown long
-   (default 8 — raise or lower depending on the book's length and how much continuity a
-   given chapter needs).
+   `nw_tool.py` subcommand to use (and, for flat manuscripts, which heading level is the chapter
+   marker — `#` or `##`) from the source itself. Use `--history N` to cap how many prior
+   chapters get included if a persona's log has grown long (default 8).
+
+   This also writes `<scratch>\<slug>_bundle.txt.label` — the chapter's own canonical label,
+   deterministically read off its own heading line (zero LLM involvement). **Always use this
+   file's contents as the `<chapter_label>` in step 3**, rather than typing a label by hand —
+   that's what keeps the same chapter logged under the exact same label across every persona and
+   every session, with no drift.
 
 2. **Get the reaction generated** — this is the one and only LLM step, and it should be as lean
    as possible: a subagent (`Agent` tool) given *only* the bundle file's contents as its prompt,
@@ -78,7 +83,7 @@ For each active panel persona:
 
 3. **Record the result** (mechanical, no tokens):
    ```
-   python toolkit\record_reaction.py <persona_slug> <review_root> "<chapter_label>" <scratch>\<slug>_reaction.txt
+   python toolkit\record_reaction.py <persona_slug> <review_root> "<label from step 1's .label file>" <scratch>\<slug>_reaction.txt
    ```
    where `<slug>_reaction.txt` holds the raw `KEY: value` text the subagent returned. This
    parses it and updates that persona's `living_reference.md` — both the new chapter-log entry
