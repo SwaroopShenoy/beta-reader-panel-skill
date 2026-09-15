@@ -18,8 +18,13 @@ ROSTER = [
     {"slug": "teen_female", "name": "Priya", "label": "Teen (16, female)"},
     {"slug": "ya", "name": "Ananya", "label": "Young adult (21, college)"},
     {"slug": "adult_late20s30s", "name": "Fatima", "label": "Adult (34)"},
+    {"slug": "late20s30s_male", "name": "Arjun", "label": "Adult (29, male, genre crossover)"},
     {"slug": "middle_aged", "name": "Deepak", "label": "Middle-aged (47)"},
+    {"slug": "middle_aged_female", "name": "Lakshmi", "label": "Middle-aged (45, female, avid genre reader)"},
     {"slug": "older", "name": "Meenakshi", "label": "Older reader (68)"},
+    {"slug": "super_fan", "name": "Naveen", "label": "Genre super-fan (25)"},
+    {"slug": "casual_reluctant", "name": "Wilson", "label": "Casual/infrequent reader (38)"},
+    {"slug": "craft_critic", "name": "Elsa", "label": "Craft-focused reader (52, former editor)"},
 ]
 
 
