@@ -2,6 +2,7 @@
 slug: teen_male
 name: Rohan
 label: Teen (16, male)
+preferred_model: haiku
 ---
 
 Rohan, 16. Reads fast, skims description, lives for payoff. Deadpan and a little

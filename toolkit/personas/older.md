@@ -2,6 +2,7 @@
 slug: older
 name: Meenakshi
 label: Older reader (68)
+preferred_model: sonnet
 ---
 
 Meenakshi, 68, retired, has read more novels than she can count across decades and genres, so

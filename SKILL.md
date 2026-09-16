@@ -119,11 +119,15 @@ windows instead of one context pretending to be several people.
      Never tell the subagent "go read `<scratch>\<slug>_bundle.txt>`" — that turns one completion
      into an agentic loop (Read tool call → tool result → reasoning → answer), which costs more
      and is slower. The prompt the subagent receives should already *contain* everything it
-     needs; also tell it explicitly not to use any tools, just to reply with the text.
-   - Pick the model deliberately per persona rather than defaulting to the heaviest one: a
-     lighter/faster model is plenty for something like the teen personas' gut reactions, while
-     `craft_critic` (Elsa) benefits from a stronger model since her whole point is noticing
-     things the others don't.
+     needs. The bundle itself already tells the model not to use tools (baked into
+     `INSTRUCTIONS`/`CONTINUING_REMINDER`, not something you need to add by hand) — but it's
+     harmless to also say so yourself when spawning.
+   - Pick the model deliberately per persona rather than defaulting to the heaviest one — each
+     persona card has a `preferred_model` field (`haiku` for the teens/casual reader, `sonnet`
+     for most, `opus` for `craft_critic`/Elsa, since her whole point is noticing things the
+     others don't). `build_persona_prompt.py` prints the persona's `preferred_model` after
+     building a fresh (non-`--continuing`) bundle — use it for that spawn's `model` param. It's
+     only relevant at spawn time; a continued conversation keeps whatever model it started with.
 
    **"In parallel" means literally one message with multiple `Agent` tool-use blocks in it, not
    one `Agent` call per message even sent back-to-back.** Separate messages run sequentially no
@@ -137,7 +141,10 @@ windows instead of one context pretending to be several people.
    ```
    where `<slug>_reaction.txt` holds the raw `KEY: value` text the subagent returned. This
    parses it and updates that persona's `living_reference.md` — both the new chapter-log entry
-   and the overwritten Running Notes block — without spending any tokens on formatting.
+   and the overwritten Running Notes block — without spending any tokens on formatting. If 4 or
+   more of the 10 fields came back empty (a subagent ignoring the format), it flags the entry
+   with a visible `⚠` marker in the file itself, not just a console warning — worth a manual
+   look if you see one, since it means that persona's reply didn't actually follow instructions.
 
 Run step 2's subagents in the background (default) when reviewing many personas/chapters at
 once so the user can keep working; run in the foreground only if the next step genuinely
@@ -180,14 +187,13 @@ Run the panel selector — safe to re-run, it won't re-roll an existing panel:
 ```
 python $env:USERPROFILE\.claude\skills\beta-reader-panel\toolkit\select_panel.py <manuscript_dir>
 ```
-This picks 2 or 3 personas at random from the roster (`toolkit/personas/`: `teen_male`,
-`teen_female`, `ya`, `adult_late20s30s`, `late20s30s_male`, `middle_aged`, `middle_aged_female`,
-`older`, `super_fan`, `casual_reluctant`, `craft_critic`), records the pick in
+This picks 2 or 3 personas at random from the 11-persona roster (run `select_panel.py --list`
+to print slug/name/label for all of them without touching any manuscript), records the pick in
 `_beta_reviews/panel.md`, and creates each selected persona's `living_reference.md` from the
 template. The panel is locked in for that manuscript from then on — don't re-roll mid-read, or
 earlier reactions become impossible to compare against later ones. If the user explicitly asks
-for specific personas instead of random ones, pass those directly rather than running the
-random selector.
+for specific personas instead of random ones, pass `--personas slug1,slug2[,slug3]` (2 or 3
+slugs, comma-separated) rather than constructing the panel files by hand.
 
 ## Per-chapter loop
 

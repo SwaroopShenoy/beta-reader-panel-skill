@@ -4,10 +4,21 @@ select_panel.py - randomly pick 2-3 beta-reader personas for a manuscript and se
 their isolated living-reference files. Safe to re-run: if a panel already exists for this
 manuscript, it just prints the existing panel instead of re-rolling it.
 
-Usage: python select_panel.py <manuscript_dir> [count]
-  <manuscript_dir>  the novelWriter project folder, or the folder containing a flat .md manuscript
-  [count]           optional: force 2 or 3 readers (default: random choice of 2 or 3)
+Usage:
+  python select_panel.py <manuscript_dir> [count]
+  python select_panel.py <manuscript_dir> --personas slug1,slug2[,slug3]
+  python select_panel.py --list
+
+  <manuscript_dir>   the novelWriter project folder, or the folder containing a flat .md
+                      manuscript
+  [count]             optional: force 2 or 3 readers (default: random choice of 2 or 3)
+  --personas          explicit slugs instead of a random pick, e.g. when the user asks for
+                      specific readers by name. 2 or 3 slugs, comma-separated, from the roster
+                      below.
+  --list              print the full persona roster (slug/name/label) and exit - no manuscript
+                      needed. Useful for picking slugs to pass to --personas.
 """
+import argparse
 import datetime
 import random
 import sys
@@ -29,10 +40,22 @@ ROSTER = [
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit("Usage: select_panel.py <manuscript_dir> [count]")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("manuscript_dir", nargs="?")
+    ap.add_argument("count", nargs="?", type=int)
+    ap.add_argument("--personas", help="comma-separated persona slugs to use instead of a random pick")
+    ap.add_argument("--list", action="store_true", help="print the roster and exit")
+    args = ap.parse_args()
 
-    target = Path(sys.argv[1])
+    if args.list:
+        for p in ROSTER:
+            print(f"{p['slug']:<20} {p['name']:<10} {p['label']}")
+        return
+
+    if not args.manuscript_dir:
+        sys.exit("Usage: select_panel.py <manuscript_dir> [count] [--personas slug1,slug2] | select_panel.py --list")
+
+    target = Path(args.manuscript_dir)
     if not target.exists():
         sys.exit(f"No such directory: {target}")
 
@@ -44,9 +67,19 @@ def main():
         print(panel_path.read_text(encoding="utf-8-sig"))
         return
 
-    count = int(sys.argv[2]) if len(sys.argv) > 2 else random.choice([2, 3])
-    count = max(2, min(3, count))
-    panel = random.sample(ROSTER, k=count)
+    by_slug = {p["slug"]: p for p in ROSTER}
+    if args.personas:
+        slugs = [s.strip() for s in args.personas.split(",") if s.strip()]
+        unknown = [s for s in slugs if s not in by_slug]
+        if unknown:
+            sys.exit(f"Unknown persona slug(s): {', '.join(unknown)} - see --list for valid slugs")
+        if not (2 <= len(slugs) <= 3):
+            sys.exit(f"--personas needs 2 or 3 slugs, got {len(slugs)}")
+        panel = [by_slug[s] for s in slugs]
+    else:
+        count = args.count if args.count else random.choice([2, 3])
+        count = max(2, min(3, count))
+        panel = random.sample(ROSTER, k=count)
 
     reviews_dir.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +106,7 @@ def main():
             text = template_text.replace("{{NAME}}", p["name"]).replace("{{LABEL}}", p["label"])
             lr_path.write_text(text, encoding="utf-8")
 
-    print(f"Panel selected ({count} readers):")
+    print(f"Panel selected ({len(panel)} readers):")
     for p in panel:
         print(f"  - {p['name']} ({p['label']})")
 

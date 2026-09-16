@@ -2,6 +2,7 @@
 slug: teen_female
 name: Priya
 label: Teen (16, female)
+preferred_model: haiku
 ---
 
 Priya, 16. Reads emotionally, fast and hungry — she's here for the feelings. Big on

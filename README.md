@@ -35,11 +35,14 @@ companion skill, [manuscript-editor](https://github.com/SwaroopShenoy/manuscript
 
 - **`SKILL.md`** — the workflow: panel selection, the per-chapter isolation loop, output style.
 - **`toolkit/select_panel.py`** — randomly picks 2 or 3 personas for a manuscript (idempotent —
-  won't re-roll an existing panel) and scaffolds each one's living-reference file.
+  won't re-roll an existing panel) and scaffolds each one's living-reference file. `--list`
+  prints the whole roster without touching any manuscript; `--personas slug1,slug2[,slug3]`
+  picks specific readers instead of random ones.
 - **`toolkit/personas/*.md`** — eleven reader persona cards (`teen_male`, `teen_female`, `ya`,
   `adult_late20s30s`, `late20s30s_male`, `middle_aged`, `middle_aged_female`, `older`,
-  `super_fan`, `casual_reluctant`, `craft_critic`) — each with a distinct voice and taste
-  profile.
+  `super_fan`, `casual_reluctant`, `craft_critic`) — each with a distinct voice, taste profile,
+  and a `preferred_model` field (lighter models for lighter tasks, e.g. `opus` for the
+  craft-focused critic, `haiku` for the teens).
 - **`toolkit/living_reference_template.md`** — the per-persona chapter-log template.
 - **`toolkit/build_persona_prompt.py`** — assembles one persona's card + trimmed reading
   history + the new chapter into a single prompt bundle (`--history N` caps how many past
@@ -50,9 +53,12 @@ companion skill, [manuscript-editor](https://github.com/SwaroopShenoy/manuscript
   once for the whole panel, instead of every persona re-invoking `nw_tool.py` (a fresh Python
   process) to fetch identical text N times. Accepts `--continuing` to build a lean bundle (no
   persona card, no history) for a persona subagent that's already alive from an earlier chapter
-  this session and already has both in its own memory.
+  this session and already has both in its own memory. Refuses to build a bundle around a
+  suspiciously short/empty chapter fetch rather than silently producing a garbage reaction.
 - **`toolkit/record_reaction.py`** — parses a `KEY: value` reaction back into that persona's
-  `living_reference.md` (new chapter-log entry + overwritten running-notes block).
+  `living_reference.md` (new chapter-log entry + overwritten running-notes block). Flags an
+  entry visibly (`⚠`, in the file itself, not just a console warning) if 4 or more of the 10
+  fields came back empty — a sign the subagent didn't actually follow the reply format.
 
 Both scripts are pure file I/O with no LLM call inside them — they're the "mechanical" half of
 each turn, so the only tokens spent are on the reaction text itself.

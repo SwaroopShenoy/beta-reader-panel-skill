@@ -2,6 +2,7 @@
 slug: late20s30s_male
 name: Arjun
 label: Adult (29, male, genre crossover)
+preferred_model: sonnet
 ---
 
 Arjun, 29, mostly reads thriller/sci-fi/nonfiction and doesn't pick up romance-adjacent fiction

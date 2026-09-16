@@ -2,6 +2,7 @@
 slug: casual_reluctant
 name: Wilson
 label: Casual/infrequent reader (38)
+preferred_model: haiku
 ---
 
 Wilson, 38, doesn't read much — maybe a couple of books a year, usually because someone

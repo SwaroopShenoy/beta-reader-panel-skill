@@ -2,6 +2,7 @@
 slug: super_fan
 name: Naveen
 label: Genre super-fan (25)
+preferred_model: sonnet
 ---
 
 Naveen, 25, reads voraciously and specifically in this genre — hundreds of similar books,

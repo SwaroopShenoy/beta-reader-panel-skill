@@ -23,7 +23,7 @@ FIELDS = [
 KEY_RE = re.compile(r"^([A-Z_]+):\s*(.*)$")
 
 
-def parse_reaction(text: str) -> dict:
+def parse_reaction(text: str) -> tuple[dict, list[str]]:
     values = {k: "" for k in FIELDS}
     current = None
     for line in text.splitlines():
@@ -36,7 +36,7 @@ def parse_reaction(text: str) -> dict:
     missing = [k for k in FIELDS if not values[k]]
     if missing:
         sys.stderr.write(f"Warning: missing/empty fields in reaction: {', '.join(missing)}\n")
-    return values
+    return values, missing
 
 
 def render_running_notes(v: dict) -> str:
@@ -50,10 +50,17 @@ def render_running_notes(v: dict) -> str:
     )
 
 
-def render_chapter_entry(chapter_label: str, v: dict) -> str:
+def render_chapter_entry(chapter_label: str, v: dict, missing: list[str]) -> str:
+    flag = ""
+    if len(missing) >= 4:
+        flag = (
+            f"⚠ _Possibly malformed reply - {len(missing)}/10 fields were missing "
+            f"({', '.join(missing)}). Worth a manual look._\n"
+        )
     return (
         f"### {chapter_label}\n"
-        f"Reaction: {v['REACTION']}\n"
+        + flag
+        + f"Reaction: {v['REACTION']}\n"
         f"Liked: {v['LIKED']}\n"
         f"Confused/disliked: {v['DISLIKED']}\n"
         f"Prediction: {v['PREDICTION']}\n"
@@ -61,7 +68,7 @@ def render_chapter_entry(chapter_label: str, v: dict) -> str:
     )
 
 
-def update_living_reference(lr_path: Path, chapter_label: str, v: dict):
+def update_living_reference(lr_path: Path, chapter_label: str, v: dict, missing: list[str]):
     text = lr_path.read_text(encoding="utf-8-sig")
 
     if "## Running notes" in text and "## Chapter log" in text:
@@ -73,11 +80,11 @@ def update_living_reference(lr_path: Path, chapter_label: str, v: dict):
             + "\n## Chapter log"
             + after_log_heading.rstrip("\n")
             + "\n\n"
-            + render_chapter_entry(chapter_label, v)
+            + render_chapter_entry(chapter_label, v, missing)
         )
     else:
         # Fallback: no template structure found, just append.
-        new_text = text.rstrip("\n") + "\n\n" + render_chapter_entry(chapter_label, v)
+        new_text = text.rstrip("\n") + "\n\n" + render_chapter_entry(chapter_label, v, missing)
 
     lr_path.write_text(new_text, encoding="utf-8")
 
@@ -93,11 +100,13 @@ def main():
         sys.exit(f"No living_reference.md for {persona_slug} at {lr_path}")
 
     raw = Path(reaction_file).read_text(encoding="utf-8-sig")
-    values = parse_reaction(raw)
-    update_living_reference(lr_path, chapter_label, values)
+    values, missing = parse_reaction(raw)
+    update_living_reference(lr_path, chapter_label, values, missing)
 
     print(f"Recorded chapter {chapter_label} for {persona_slug} -> {lr_path}")
     print(f"  Rating: {values['RATING']}")
+    if len(missing) >= 4:
+        print(f"  WARNING: {len(missing)}/10 fields were missing - flagged in the file for review.")
 
 
 if __name__ == "__main__":

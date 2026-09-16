@@ -46,6 +46,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+MIN_CHAPTER_CHARS = 50
+
 TOOLKIT_DIR = Path(__file__).parent
 PERSONAS_DIR = TOOLKIT_DIR / "personas"
 NW_TOOL_PATH = Path(
@@ -62,6 +64,9 @@ You are role-playing as this specific beta reader reacting to the chapter above.
 know any other reader exists - do not reference or imagine other opinions. React only to this
 one chapter, honestly, in character. This is a reader's gut reaction, not an editor's critique
 - no line edits, no prose fixes, no craft prescriptions.
+
+Do not use any tools. Do not read any files. Do not search anything. Everything you need is
+already in this prompt - just reply with plain text in the format below.
 
 Reply with ONLY the following fields, each as "KEY: value" on its own line (a value may wrap
 onto the next line as long as it doesn't start with another KEY: - just keep each field to a
@@ -92,12 +97,29 @@ Nothing else - no preamble, no markdown headers, just those ten lines.
 CONTINUING_REMINDER = """\
 === INSTRUCTIONS ===
 Same beta reader, same rules as before - you don't know any other reader exists, this is a
-reader's gut reaction to the new chapter above, not an editor's critique. Reply with ONLY the
-same ten "KEY: value" lines as before (REACTION, LIKED, DISLIKED, PREDICTION, RATING, VIBE,
-FAVORITE, LEAST_FAVORITE, THEORIES, OPEN_QUESTIONS), nothing else. THEORIES and OPEN_QUESTIONS
-are still your long-range memory - carry forward anything still unresolved from earlier
-chapters, and call out explicitly if this chapter pays off something you were tracking.
+reader's gut reaction to the new chapter above, not an editor's critique. Do not use any tools -
+everything you need is already in this prompt. Reply with ONLY the same ten "KEY: value" lines
+as before (REACTION, LIKED, DISLIKED, PREDICTION, RATING, VIBE, FAVORITE, LEAST_FAVORITE,
+THEORIES, OPEN_QUESTIONS), nothing else. THEORIES and OPEN_QUESTIONS are still your long-range
+memory - carry forward anything still unresolved from earlier chapters, and call out explicitly
+if this chapter pays off something you were tracking.
 """
+
+
+def read_frontmatter_field(card_text: str, field: str) -> str:
+    """Pull a simple 'field: value' line out of a persona card's YAML-ish frontmatter block
+    (between the two '---' lines). Not a real YAML parser - these cards only ever use flat
+    string fields, so a line scan is enough and avoids a dependency."""
+    in_frontmatter = False
+    for line in card_text.splitlines():
+        if line.strip() == "---":
+            if in_frontmatter:
+                break
+            in_frontmatter = True
+            continue
+        if in_frontmatter and line.startswith(f"{field}:"):
+            return line.split(":", 1)[1].strip()
+    return ""
 
 
 def extract_chapter_label(chapter_text: str, fallback: str) -> str:
@@ -117,15 +139,25 @@ def extract_chapter_label(chapter_text: str, fallback: str) -> str:
 def fetch_chapter(chapter_source: str, chapter_ref: str) -> str:
     src = Path(chapter_source)
     if src.is_dir():
-        cmd = ["python", str(NW_TOOL_PATH), "get", str(src), chapter_ref]
+        cmd = [sys.executable, str(NW_TOOL_PATH), "get", str(src), chapter_ref]
     elif src.is_file():
-        cmd = ["python", str(NW_TOOL_PATH), "flat-get", str(src), chapter_ref]
+        cmd = [sys.executable, str(NW_TOOL_PATH), "flat-get", str(src), chapter_ref]
     else:
         sys.exit(f"chapter_source not found: {chapter_source}")
     result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
     if result.returncode != 0:
         sys.exit(f"nw_tool.py failed:\n{result.stderr}")
     return result.stdout.strip()
+
+
+def check_chapter_text(chapter_text: str, chapter_ref: str):
+    if len(chapter_text.strip()) < MIN_CHAPTER_CHARS:
+        sys.exit(
+            f"Chapter text for '{chapter_ref}' is suspiciously short "
+            f"({len(chapter_text.strip())} chars) - refusing to build a bundle around what's "
+            f"probably an empty fetch, a wrong chapter_ref, or a --chapter-file pointed at the "
+            f"wrong file. Check the source before retrying."
+        )
 
 
 def trim_history(living_reference_text: str, history_n: int) -> str:
@@ -178,8 +210,10 @@ def main():
         chapter_text = Path(args.chapter_file).read_text(encoding="utf-8-sig").strip()
     else:
         chapter_text = fetch_chapter(args.chapter_source, args.chapter_ref)
+    check_chapter_text(chapter_text, args.chapter_ref)
     chapter_label = extract_chapter_label(chapter_text, fallback=args.chapter_ref)
 
+    preferred_model = ""
     if args.continuing:
         bundle = (
             "=== NEW CHAPTER TO REACT TO ===\n" + chapter_text + "\n\n"
@@ -190,6 +224,7 @@ def main():
         if not card_path.exists():
             sys.exit(f"Unknown persona: {args.persona_slug} (no {card_path})")
         card_text = card_path.read_text(encoding="utf-8-sig").strip()
+        preferred_model = read_frontmatter_field(card_text, "preferred_model")
 
         lr_path = Path(args.review_root) / "_beta_reviews" / args.persona_slug / "living_reference.md"
         if not lr_path.exists():
@@ -212,6 +247,8 @@ def main():
         label_path.write_text(chapter_label, encoding="utf-8")
         print(f"Bundle written to {args.out} ({len(bundle)} chars)")
         print(f"Chapter label ({label_path}): {chapter_label}")
+        if preferred_model:
+            print(f"Preferred model for this persona (fresh spawn only): {preferred_model}")
     else:
         sys.stdout.write(bundle)
 

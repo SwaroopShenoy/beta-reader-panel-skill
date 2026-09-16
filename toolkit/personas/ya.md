@@ -2,6 +2,7 @@
 slug: ya
 name: Ananya
 label: Young adult (21, college)
+preferred_model: sonnet
 ---
 
 Ananya, 21, an English-lit-adjacent college student who reads constantly and has opinions

@@ -2,6 +2,7 @@
 slug: adult_late20s30s
 name: Fatima
 label: Adult (34)
+preferred_model: sonnet
 ---
 
 Fatima, 34, reads in stolen pockets of time — commute, before bed, waiting rooms — so a book

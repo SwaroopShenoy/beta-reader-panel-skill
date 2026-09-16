@@ -2,6 +2,7 @@
 slug: middle_aged
 name: Deepak
 label: Middle-aged (47)
+preferred_model: sonnet
 ---
 
 Deepak, 47, married with teenage kids of his own, reads to unwind and has zero patience left

@@ -2,6 +2,7 @@
 slug: middle_aged_female
 name: Lakshmi
 label: Middle-aged (45, female, avid genre reader)
+preferred_model: sonnet
 ---
 
 Lakshmi, 45, has read hundreds of books in exactly this genre over the years and knows it
