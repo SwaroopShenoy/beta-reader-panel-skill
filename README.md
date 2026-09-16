@@ -18,12 +18,15 @@ with a self-contained prompt that never mentions the other personas exist. Each 
 keeps its own private `living_reference.md` as the durable, cross-session record.
 
 The mechanical parts — assembling a persona's context, parsing its reply back into the
-tracking file — are plain Python, not tokens. The only LLM step is a single text-in/text-out
-call (feed it a bundle, get back ten `KEY: value` lines), which needs no tool access at all.
-That keeps it cheap (no agentic tool-belt overhead, and each persona's model can be picked
-deliberately rather than defaulting to the heaviest one) and genuinely tool-agnostic — that one
-call could run as a lean subagent, a raw API call, or a different model/harness, with no change
-to the rest of the pipeline.
+tracking file — are plain Python, not tokens. The remaining LLM step only *needs* to be a
+single text-in/text-out call (feed it a bundle, get back ten `KEY: value` lines) — no tool
+access required by the task itself, which is what makes it swappable to a raw API call or a
+different model/harness in principle. Running it via a Claude Code subagent still carries that
+harness's fixed per-spawn overhead (every subagent type ships its own system prompt and tool
+schemas, whether the task needs them or not), so two things matter in practice: never let a
+subagent go read the bundle file itself (paste it inline in the prompt instead), and reuse a
+persona's subagent across a batch of chapters in the same session rather than respawning it —
+and paying that fixed cost — for every single chapter.
 
 This is reader *reaction*, not editing — no line edits, no prose fixes. For that, see the
 companion skill, [manuscript-editor](https://github.com/SwaroopShenoy/manuscript-editor-skill).
@@ -45,7 +48,9 @@ companion skill, [manuscript-editor](https://github.com/SwaroopShenoy/manuscript
   `.label` sidecar file, so the same chapter is never logged under slightly different labels
   by different personas or sessions. Accepts `--chapter-file` to reuse a chapter already fetched
   once for the whole panel, instead of every persona re-invoking `nw_tool.py` (a fresh Python
-  process) to fetch identical text N times.
+  process) to fetch identical text N times. Accepts `--continuing` to build a lean bundle (no
+  persona card, no history) for a persona subagent that's already alive from an earlier chapter
+  this session and already has both in its own memory.
 - **`toolkit/record_reaction.py`** — parses a `KEY: value` reaction back into that persona's
   `living_reference.md` (new chapter-log entry + overwritten running-notes block).
 
@@ -81,3 +86,7 @@ First run picks 2-3 random readers and locks them in for that manuscript. Each s
 chapter, every panel member reacts independently, in character, based only on what they've
 "read" so far — then their reaction is logged to their own private file under
 `<manuscript>/_beta_reviews/<persona-slug>/living_reference.md`.
+
+Within one sitting, each persona's subagent is reused across chapters rather than respawned for
+every one (periodically refreshed to keep its own context bounded) — that reuse is what keeps a
+multi-chapter review session cheap, on top of the file-based isolation.

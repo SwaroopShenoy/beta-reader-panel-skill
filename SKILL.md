@@ -18,13 +18,18 @@ skill never writes back to the manuscript itself, only reads chapters.
 
 **Token/tool-agnosticism note:** `build_persona_prompt.py` and `record_reaction.py` do all the
 mechanical work (assembling context, parsing output, updating files) as plain deterministic
-Python — zero tokens, and they don't care what generates the reaction in between. The only LLM
-call in the loop is a single text-in/text-out step: feed it the bundle, get back the ten `KEY:
-value` lines. That step doesn't need Read/Write/Bash access at all, which means it's not tied to
-a full agentic tool-use loop — it can run as a lean subagent, a raw API call, or a different
-model/harness entirely, with no change to the skill's logic. Don't hand a persona's turn to a
-heavyweight general-purpose agent that re-reads files and figures out formatting itself — that
-pays the full agent tool-belt overhead for work the scripts already do for free.
+Python — zero tokens, and they don't care what generates the reaction in between. The remaining
+LLM step only *needs* to be a single text-in/text-out completion — no tool access required by
+the task itself — which is what makes it swappable to a raw API call or a different
+model/harness in principle. In practice, if that step runs via this harness's `Agent` tool,
+be aware every available subagent type carries its own fixed system-prompt/tool-belt overhead
+regardless of task — there's no genuinely toolless subagent on offer here. Given that
+constraint, the actual levers are: never let the subagent go read a file itself (paste the
+bundle inline instead — see the spawning steps below), and reuse a persona's subagent across a
+batch of chapters rather than paying that fixed tax on every single chapter (see "Long-lived vs
+ad hoc"). Don't hand a persona's turn to a heavyweight general-purpose agent that re-reads files
+and figures out formatting itself — that's the fixed cost stacked with avoidable extra tool
+round-trips on top.
 
 ## Cold start: ready to review by the user's 2nd message
 
@@ -104,15 +109,21 @@ windows instead of one context pretending to be several people.
    that's what keeps the same chapter logged under the exact same label across every persona and
    every session, with no drift.
 
-2. **Get the reaction generated** — this is the one and only LLM step, and it should be as lean
-   as possible: a subagent (`Agent` tool) given *only* the bundle file's contents as its prompt,
-   asked to reply with exactly the ten `KEY: value` lines the bundle's instructions specify, and
-   nothing else. It needs no tools at all beyond producing that text — don't give it a
-   `general-purpose` agent's full Read/Write/Bash belt for a job that's pure text generation.
-   Pick the model deliberately per persona rather than defaulting to the heaviest one: a
-   lighter/faster model is plenty for something like the teen personas' gut reactions, while
-   `craft_critic` (Elsa) benefits from a stronger model since her whole point is noticing things
-   the others don't.
+2. **Get the reaction generated** — this is the one and only LLM step. Two things matter here,
+   both because the `Agent` tool has no genuinely tool-less mode — every subagent type available
+   (`general-purpose` included) carries its own fixed system prompt and tool-schema overhead no
+   matter what the task needs, so the only levers actually available are avoiding *extra* tool
+   calls and not paying that fixed cost more often than necessary:
+
+   - **Read the bundle file yourself and paste its full text directly into the `Agent` prompt.**
+     Never tell the subagent "go read `<scratch>\<slug>_bundle.txt>`" — that turns one completion
+     into an agentic loop (Read tool call → tool result → reasoning → answer), which costs more
+     and is slower. The prompt the subagent receives should already *contain* everything it
+     needs; also tell it explicitly not to use any tools, just to reply with the text.
+   - Pick the model deliberately per persona rather than defaulting to the heaviest one: a
+     lighter/faster model is plenty for something like the teen personas' gut reactions, while
+     `craft_critic` (Elsa) benefits from a stronger model since her whole point is noticing
+     things the others don't.
 
    **"In parallel" means literally one message with multiple `Agent` tool-use blocks in it, not
    one `Agent` call per message even sent back-to-back.** Separate messages run sequentially no
@@ -135,17 +146,33 @@ results are needed to answer the user).
 
 ### Long-lived vs ad hoc
 
-- **Ad hoc (default, always safe):** spawn a fresh subagent per persona per chapter, rehydrated
-  from their `living_reference.md` file each time. This is what makes the system durable across
-  separate Claude Code sessions spanning weeks or months — the file is the persistent memory,
-  not the subagent process.
-- **Long-lived (optional, same-session only):** during one continuous reading session covering
-  several chapters back-to-back, you may keep each persona's subagent alive and `SendMessage`
-  it the next chapter instead of respawning, using the agent id/name from its first spawn. This
-  can preserve a bit more voice nuance in-context across chapters within that session. It does
-  **not** persist once the session ends — the next session always falls back to spawning fresh
-  from the `living_reference.md` files, which is why those files must stay the source of truth
-  and get updated every chapter regardless of which mode is used.
+**Reusing a persona's subagent across chapters in the same session is the recommended default
+whenever reviewing more than one chapter in a sitting** — not just an optional nicety. Two real
+savings compound: the fixed per-spawn system-prompt/tool-belt tax is paid once per persona for
+the whole batch instead of once per persona *per chapter*, and a continuing conversation
+benefits from prompt caching on its own accumulating history, which a fresh spawn never gets.
+Only fall back to ad hoc (fresh spawn per chapter) when reviewing a single chapter in isolation,
+where there's no batch to amortize across.
+
+- **First chapter of a batch (fresh spawn, always):** build the full bundle (step 1, no
+  `--continuing`) and spawn the persona's subagent with it inline, per step 2. Keep track of the
+  agent id/name it returns — that's the handle for every subsequent chapter in this batch.
+- **Every following chapter in the same batch (reuse, don't respawn):** build a lean bundle with
+  `--continuing` (skips the persona card and history sections entirely, since the live agent
+  already has both in its own memory — resending them is pure duplication) and `SendMessage` it
+  to that same agent id, inline in the message, same "no tools" instruction as before.
+- **Refresh cadence — don't let one subagent run forever:** a long-lived agent's own context
+  still grows every chapter, unboundedly, and there's no way to trim a live conversation the way
+  `--history` trims a file. After roughly `--history`'s window worth of chapters (default 8),
+  retire that persona's subagent and spawn a fresh one for the next batch — full bundle again,
+  no `--continuing` — re-primed from its own just-updated `living_reference.md`, which is
+  already the compact record. This resets growth periodically while keeping most of the
+  caching/amortization win within each batch.
+- **Across separate Claude Code sessions (different days), always ad hoc.** Subagents don't
+  persist once a session ends — the next session always starts a fresh batch (first chapter =
+  full bundle, fresh spawn) rehydrated from `living_reference.md`. That file staying the source
+  of truth, updated every single chapter regardless of which mode produced the reaction, is what
+  makes any of this durable across weeks or months of on-and-off reviewing.
 
 ## Setup (once per manuscript)
 
@@ -165,11 +192,14 @@ random selector.
 ## Per-chapter loop
 
 1. Fetch the chapter once (step 0 above).
-2. Build every active persona's bundle (step 1) — cheap, sequential is fine, no subprocess left
-   in this step once `--chapter-file` is used.
-3. Launch every persona's generation subagent **together, in one message** (step 2) — this is
-   the step that actually costs time and tokens, so it's the one that must be truly parallel.
-4. Record each persona's result as its subagent reports back (step 3).
+2. Build every active persona's bundle (step 1) — full bundle (no `--continuing`) if this is
+   each persona's first chapter in the current batch, lean `--continuing` bundle if their
+   subagent is already alive from an earlier chapter this session.
+3. Launch/continue every persona's generation subagent **together, in one message** (step 2) —
+   `Agent` for a fresh spawn, `SendMessage` to reuse an existing one, whichever applies per
+   persona, but all issued in that same single message. This is the step that actually costs
+   time and tokens, so it's the one that must be truly parallel.
+4. Record each persona's result as its subagent reports back (step 3) — same either way.
 5. Present all personas' reactions together, per the format below — don't drip-feed one
    persona's take before the others are in, since isolation is already guaranteed by
    construction at that point.
