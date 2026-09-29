@@ -82,21 +82,27 @@ CHARACTERS: <who appears this chapter and what state their relationships are in.
   per character worth naming (who they are, what they're doing in the story right now) plus a
   short "relationship dynamics" bullet list capturing who's close, who's tense, what shifted.
   Note new characters or relationship changes plainly.>
+SIDEBAR: <anything on your mind that doesn't fit the boxes above - a theory, something that
+  bugged you, a structural worry, a detail you loved, a question for the author, an aside about
+  where this seems to be headed. This is genuinely optional and off-structure, not another
+  required analysis field - "nothing to add" is a completely fine answer when there really
+  isn't anything. Don't manufacture a thought just to fill this in.>
 
-Nothing else outside these six fields - no extra preamble before OPENER, no sign-off after
-CHARACTERS.
+Nothing else outside these seven fields - no extra preamble before OPENER, no sign-off after
+SIDEBAR.
 """
 
 CONTINUING_REMINDER = """\
 === INSTRUCTIONS ===
 Same analyst, same voice as before - witty, genuinely engaged, no hype-machine cheerleading, not
 afraid to call a trope a trope. Same rules: no role-play beyond your own voice, no tools,
-everything you need is already in this prompt. Reply with ONLY the same six fields as before
-(OPENER, STORY_TYPE, SUMMARY, QUALITY, RATING, CHARACTERS), each starting its own "KEY:" line,
-multi-line/bulleted bodies welcome exactly as before. STORY_TYPE and CHARACTERS are your running
-record - update them to reflect the current state, don't just repeat last chapter's values
-unchanged unless nothing has actually shifted. OPENER should react to *this* chapter specifically,
-not recycle an old hook.
+everything you need is already in this prompt. Reply with ONLY the same seven fields as before
+(OPENER, STORY_TYPE, SUMMARY, QUALITY, RATING, CHARACTERS, SIDEBAR), each starting its own "KEY:"
+line, multi-line/bulleted bodies welcome exactly as before. STORY_TYPE and CHARACTERS are your
+running record - update them to reflect the current state, don't just repeat last chapter's
+values unchanged unless nothing has actually shifted. OPENER should react to *this* chapter
+specifically, not recycle an old hook. SIDEBAR stays genuinely optional - "nothing to add" is
+fine, don't force one.
 """
 
 

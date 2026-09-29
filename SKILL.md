@@ -279,7 +279,18 @@ Rating: <RATING>
 
 ### Characters & Relationships
 <CHARACTERS>
+
+### Sidebar
+<SIDEBAR — only if present>
 ```
+
+`SIDEBAR` is the analyst's own off-structure aside — a theory, something that bugged it, a
+question for the author, a detail it loved — anything that didn't fit neatly into the boxes
+above. It's genuinely optional: `record_analysis.py` drops the section entirely when the
+subagent said there was nothing to add (or left it blank), so don't force a "Sidebar" heading
+onto an empty thought just to fill out the shape. When it is present, keep it last, after
+Characters & Relationships, and don't reformat it into the same structured tone as the rest —
+it's supposed to read like the analyst went slightly off-script.
 
 Present the subagent's field bodies close to verbatim (light cleanup only — stray whitespace,
 not rewording); they're already written in voice and may already use bullets/bold internally.

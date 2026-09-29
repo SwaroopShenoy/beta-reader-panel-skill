@@ -14,7 +14,11 @@ import re
 import sys
 from pathlib import Path
 
-FIELDS = ["OPENER", "STORY_TYPE", "SUMMARY", "QUALITY", "RATING", "CHARACTERS"]
+FIELDS = ["OPENER", "STORY_TYPE", "SUMMARY", "QUALITY", "RATING", "CHARACTERS", "SIDEBAR"]
+# SIDEBAR is genuinely optional (off-structure asides, "nothing to add" is a fine answer, and
+# an empty one shouldn't count as a malformed reply the way a missing SUMMARY or RATING would).
+REQUIRED_FIELDS = [f for f in FIELDS if f != "SIDEBAR"]
+NONE_MARKERS = {"nothing to add", "none", "n/a", "nothing", "no notes", "-"}
 KEY_RE = re.compile(r"^([A-Z_]+):\s*(.*)$")
 
 
@@ -33,7 +37,7 @@ def parse_output(text: str) -> tuple[dict, list[str]]:
             values[current] = (values[current] + "\n" + line.rstrip()).strip("\n") if values[current] else line.rstrip()
     for k in FIELDS:
         values[k] = values[k].strip()
-    missing = [k for k in FIELDS if not values[k]]
+    missing = [k for k in REQUIRED_FIELDS if not values[k]]
     if missing:
         sys.stderr.write(f"Warning: missing/empty fields in output: {', '.join(missing)}\n")
     return values, missing
@@ -52,8 +56,8 @@ def render_chapter_entry(chapter_label: str, v: dict, missing: list[str]) -> str
     flag = ""
     if len(missing) >= 2:
         flag = (
-            f"⚠ _Possibly malformed reply - {len(missing)}/6 fields were missing "
-            f"({', '.join(missing)}). Worth a manual look._\n\n"
+            f"⚠ _Possibly malformed reply - {len(missing)}/{len(REQUIRED_FIELDS)} required "
+            f"fields were missing ({', '.join(missing)}). Worth a manual look._\n\n"
         )
     parts = [f"### {chapter_label}", flag.rstrip("\n")] if flag else [f"### {chapter_label}"]
     if v["OPENER"]:
@@ -65,6 +69,8 @@ def render_chapter_entry(chapter_label: str, v: dict, missing: list[str]) -> str
         f"#### Rating\n{v['RATING']}",
         f"#### Characters & relationships\n{v['CHARACTERS']}",
     ]
+    if v["SIDEBAR"] and v["SIDEBAR"].strip().lower() not in NONE_MARKERS:
+        parts.append(f"#### Sidebar\n{v['SIDEBAR']}")
     return "\n\n".join(p for p in parts if p.strip()) + "\n"
 
 
@@ -105,7 +111,7 @@ def main():
     print(f"Recorded chapter {chapter_label} -> {lr_path}")
     print(f"  Rating: {values['RATING']}")
     if len(missing) >= 2:
-        print(f"  WARNING: {len(missing)}/5 fields were missing - flagged in the file for review.")
+        print(f"  WARNING: {len(missing)}/{len(REQUIRED_FIELDS)} required fields were missing - flagged in the file for review.")
 
 
 if __name__ == "__main__":
