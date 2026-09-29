@@ -24,15 +24,23 @@ KEY_RE = re.compile(r"^([A-Z_]+):\s*(.*)$")
 
 
 def parse_reaction(text: str) -> tuple[dict, list[str]]:
+    """Same parsing approach as record_analysis.py: a line only starts a new field when it
+    matches KEY: at the very start; everything else, blank lines included, is appended to
+    whichever field is currently open. Reactions are instructed to stay short, single-paragraph
+    answers, so this mostly just joins wrapped lines - but if a persona ever does reply with a
+    short list (e.g. LIKED naming two things on separate lines), this preserves that structure
+    instead of silently flattening it into one run-on sentence the way a plain space-join would."""
     values = {k: "" for k in FIELDS}
     current = None
     for line in text.splitlines():
-        m = KEY_RE.match(line.strip())
+        m = KEY_RE.match(line)
         if m and m.group(1) in FIELDS:
             current = m.group(1)
             values[current] = m.group(2).strip()
-        elif current and line.strip():
-            values[current] = (values[current] + " " + line.strip()).strip()
+        elif current is not None:
+            values[current] = (values[current] + "\n" + line.rstrip()).strip("\n") if values[current] else line.rstrip()
+    for k in FIELDS:
+        values[k] = values[k].strip()
     missing = [k for k in FIELDS if not values[k]]
     if missing:
         sys.stderr.write(f"Warning: missing/empty fields in reaction: {', '.join(missing)}\n")

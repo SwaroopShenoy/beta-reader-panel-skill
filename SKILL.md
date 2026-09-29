@@ -23,6 +23,20 @@ Reviews a manuscript chapter by chapter. Two modes, same toolkit family:
 Both modes are **reading/analysis, not editing** — no line edits, no prose fixes, no craft
 prescriptions. If the user wants that, point them to the `manuscript-editor` skill instead.
 
+|                    | **Analyst mode** (default)                  | **Panel mode**                              |
+|--------------------|----------------------------------------------|----------------------------------------------|
+| Voices             | One (you, the analyst)                        | 2-3 personas, randomly picked per manuscript  |
+| Runs as            | Main conversation thread, no subagent          | One `Agent` subagent per persona (real isolation) |
+| Reference file(s)  | `_story_analysis/living_reference.md` (one)    | `_beta_reviews/<slug>/living_reference.md` (one per persona) |
+| History sent per chapter | Full book by default (`--history 30`)   | Last 8 chapters, older ones digested (`--history 8`) |
+| Output             | One structured analysis, OPENER→SIDEBAR (see below) | One short in-character block per persona (see below) |
+| Reach for it when  | "review my chapter", chapter summaries/craft notes | "what would readers think", reader reactions |
+
+These two never share state or code paths — the only thing genuinely shared is `nw_tool.py` for
+reading chapters and the general "mechanical work in Python, one LLM step, paste bundles inline"
+approach. Don't let analyst-mode logic leak into panel mode's subagent-spawning steps or vice
+versa; the rest of this document keeps them under clearly separate headers for that reason.
+
 Toolkit lives in this skill's own folder. Analyst mode: `toolkit/init_analyst.py`,
 `toolkit/analyst_reference_template.md`, `toolkit/build_analyst_prompt.py`,
 `toolkit/record_analysis.py`. Panel mode: `toolkit/select_panel.py`, `toolkit/personas/*.md`,
@@ -358,17 +372,22 @@ slugs, comma-separated) rather than constructing the panel files by hand.
 
 ## Panel mode: output style
 
-Keep it to the point: short in-character reactions and a rating, not long-form analysis. Use
-this exact shape for presenting a chapter's panel results, one block per persona, in the same
-order the panel was selected:
+Keep it to the point: short in-character reactions and a rating, not long-form analysis — that's
+a deliberate difference from analyst mode's depth, not an oversight, since this is a gut
+reaction, not a craft read. Structurally it still borrows analyst mode's conventions where they
+fit a short block: a `###` header per voice, and rating on its own line rather than buried in the
+header. Use this exact shape for presenting a chapter's panel results, one block per persona, in
+the same order the panel was selected:
 
 ```
-### <Name> — <label> — <RATING>
+### <Name> — <label>
 "<REACTION, verbatim>"
 
 **Liked:** <LIKED>
 **Didn't land:** <DISLIKED>
 **Watching for:** <PREDICTION>
+
+Rating: <RATING>
 ```
 
 Skip empty/"none" fields rather than printing them (e.g. drop the "Watching for" line entirely
@@ -377,3 +396,9 @@ a genuinely interesting split (e.g. "Elsa and Wilson landed in very different pl
 pacing here") — don't manufacture a synthesis if there isn't one. The `living_reference.md`
 files are the persistent record — there's no need for a separate compiled review file per
 chapter unless the user asks for one.
+
+What doesn't carry over from analyst mode, on purpose: no OPENER (the quoted REACTION already
+is the hook), no SUMMARY (a reader reaction isn't a chapter record — analyst mode's Chapter log
+already is that), no SIDEBAR (PREDICTION/"Watching for" already covers a persona's own forward
+-looking aside; a second off-structure field would just pad a reply that's supposed to stay
+gut-level short).
