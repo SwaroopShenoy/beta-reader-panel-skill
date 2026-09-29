@@ -16,8 +16,12 @@ Usage:
                       novelWriter project, or the path to the .md file for a flat manuscript
   <chapter_ref>       handle/title (novelWriter) or heading substring (flat) identifying the
                       chapter
-  --history N          how many most-recent chapter-log entries to include in full (default 8)
-                      - Running notes are always included in full regardless
+  --history N          how many most-recent chapter-log entries to include in full (default 30,
+                      i.e. effectively the whole book - these are usually ~30 chapters max, and
+                      keeping full detail for all of them avoids losing a callback to an early
+                      chapter's specific beats once the book runs past a small window. Pass a
+                      smaller number by hand for an unusually long manuscript.) Running notes are
+                      always included in full regardless of this setting.
   --out FILE           write the bundle to a file instead of stdout (also writes FILE.label,
                       same as build_persona_prompt.py)
   --chapter-file FILE  reuse already-fetched chapter text instead of shelling out to nw_tool.py
@@ -176,7 +180,7 @@ def main():
     ap.add_argument("review_root")
     ap.add_argument("chapter_source")
     ap.add_argument("chapter_ref")
-    ap.add_argument("--history", type=int, default=8)
+    ap.add_argument("--history", type=int, default=30)
     ap.add_argument("--out")
     ap.add_argument("--chapter-file")
     ap.add_argument("--continuing", action="store_true")

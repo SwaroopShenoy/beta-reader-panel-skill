@@ -9,10 +9,12 @@ Reviews a manuscript chapter by chapter. Two modes, same toolkit family:
 
 - **Analyst mode (lightweight, default)** — one continuously-updated read: what kind of story
   this is, a detailed summary of the chapter, an honest read on writing quality + a rating, and
-  who's involved / how relationships stand. No in-character opinions, no panel setup, one
-  Sonnet subagent. Reach for this whenever the user just wants a chapter-by-chapter record and
-  quality read, not simulated reader reactions — it's cheaper and faster to start (no panel
-  roll) and is the right default unless the user specifically wants reader reactions.
+  who's involved / how relationships stand. No in-character opinions, no panel setup, and
+  **written by you directly, not a subagent** — there's no second opinion to isolate from bias
+  here, so the subagent isolation that panel mode needs for real doesn't apply. Reach for this
+  whenever the user just wants a chapter-by-chapter record and quality read, not simulated
+  reader reactions — it's cheaper and faster to start (no panel roll, no subagent spawn tax) and
+  is the right default unless the user specifically wants reader reactions.
 - **Panel mode** — several different readers independently reacting to the same manuscript, the
   way a real author would run parallel beta readers to avoid one opinion anchoring the others.
   Use when the user explicitly wants reader reactions / "what would readers think" / multiple
@@ -29,20 +31,23 @@ Toolkit lives in this skill's own folder. Analyst mode: `toolkit/init_analyst.py
 `nw_tool.py` (`$env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\nw_tool.py`) — this
 skill never writes back to the manuscript itself, only reads chapters.
 
-**Token/tool-agnosticism note:** `build_persona_prompt.py` and `record_reaction.py` do all the
-mechanical work (assembling context, parsing output, updating files) as plain deterministic
-Python — zero tokens, and they don't care what generates the reaction in between. The remaining
-LLM step only *needs* to be a single text-in/text-out completion — no tool access required by
-the task itself — which is what makes it swappable to a raw API call or a different
+**Token/tool-agnosticism note (panel mode):** `build_persona_prompt.py` and `record_reaction.py`
+do all the mechanical work (assembling context, parsing output, updating files) as plain
+deterministic Python — zero tokens, and they don't care what generates the reaction in between.
+The remaining LLM step only *needs* to be a single text-in/text-out completion — no tool access
+required by the task itself — which is what makes it swappable to a raw API call or a different
 model/harness in principle. In practice, if that step runs via this harness's `Agent` tool,
 be aware every available subagent type carries its own fixed system-prompt/tool-belt overhead
-regardless of task — there's no genuinely toolless subagent on offer here. Given that
-constraint, the actual levers are: never let the subagent go read a file itself (paste the
-bundle inline instead — see the spawning steps below), and reuse a persona's subagent across a
-batch of chapters rather than paying that fixed tax on every single chapter (see "Long-lived vs
-ad hoc"). Don't hand a persona's turn to a heavyweight general-purpose agent that re-reads files
-and figures out formatting itself — that's the fixed cost stacked with avoidable extra tool
-round-trips on top.
+regardless of task — there's no genuinely toolless subagent on offer here (measured: ~45k tokens
+per fresh spawn, regardless of task size). Given that constraint, the actual levers are: never
+let the subagent go read a file itself (paste the bundle inline instead — see the spawning steps
+below), and reuse a persona's subagent across a batch of chapters rather than paying that fixed
+tax on every single chapter (see "Long-lived vs ad hoc"). Don't hand a persona's turn to a
+heavyweight general-purpose agent that re-reads files and figures out formatting itself — that's
+the fixed cost stacked with avoidable extra tool round-trips on top. This whole fixed-overhead
+problem is *why panel mode needs it anyway* — real isolation is worth ~45k tokens per persona
+per fresh chapter. **Analyst mode has no such need** (see below) and skips the subagent
+entirely, which is where most of this problem simply doesn't apply.
 
 ## Cold start: ready to review by the user's 2nd message
 
@@ -79,7 +84,7 @@ first chapter's review happen in the same turn once the manuscript is known.
 ### Picking a mode
 
 Default to **analyst mode** — it's what most requests to "review my chapter" or "go through my
-manuscript" actually want, it's cheaper (one subagent, no panel roll), and it's easy to switch
+manuscript" actually want, it's cheaper (no subagent at all, no panel roll), and it's easy to switch
 into panel mode later without losing anything (the two modes keep entirely separate reference
 files, `_story_analysis/` vs `_beta_reviews/`, so nothing needs to be redone). Switch to **panel
 mode** only when the user's own words ask for reader reactions, opinions, "what would readers
@@ -218,30 +223,31 @@ python $env:USERPROFILE\.claude\skills\beta-reader-panel\toolkit\init_analyst.py
 This creates `_story_analysis/living_reference.md` from the template. There's no roster, no
 random pick, nothing to lock in — just the one file that gets updated every chapter.
 
-## Analyst mode: per-chapter loop
+## Analyst mode: no subagent — you write the analysis yourself
 
-Same shape as panel mode's loop but with exactly one subagent instead of N, so nothing here
-needs to be "launched in parallel" — there's only one thread.
+Panel mode needs subagent isolation because multiple opinions would anchor on each other in a
+shared context. Analyst mode has exactly one voice — there's nothing for it to be biased
+*against* — so the ~45k-token fixed cost of spawning an `Agent` buys nothing here. **Generate
+the analysis yourself, directly in the main conversation, every time.** This is the default; do
+not spawn a subagent for analyst mode unless the user explicitly asks to keep chapter text out
+of the main conversation for some reason (e.g. an extremely long batch where they'd rather it
+happen off to the side) — that's a real but unusual tradeoff, not the normal path.
 
 1. Fetch the chapter (`nw_tool.py get`/`flat-get`) into a scratch file, same as panel mode.
 2. Build the bundle:
    ```
    python toolkit\build_analyst_prompt.py <review_root> <chapter_source> <chapter_ref> --chapter-file <scratch>\chapter.txt --out <scratch>\analysis_bundle.txt
    ```
-   Full bundle (no `--continuing`) for the first chapter of a batch or session; `--continuing`
-   for every following chapter while the subagent from step 3 is still alive. Use `--history N`
-   the same way panel mode does (default 8). As with panel mode, always read the chapter's
-   `.label` sidecar back and use it as `<chapter_label>` in step 4 — never hand-type a label.
-3. **Read the bundle file yourself and paste its full text into the `Agent` prompt** — same
-   rationale as panel mode: never tell the subagent to go read the bundle itself, that turns one
-   completion into an agentic loop. Spawn with `model: sonnet` (this mode doesn't need Opus —
-   it's a straight descriptive read, not judging craft against genre peers the way `craft_critic`
-   does) and keep the subagent's own reasoning brief: this is a direct analytical pass, not a
-   puzzle to reason through at length — say so in the spawn if the harness is inclined to overthink
-   a plain description task. Keep track of the returned agent id for the rest of the batch, same
-   reuse/refresh rules as panel mode's "Long-lived vs ad hoc" section — reuse across chapters in
-   a batch, retire and respawn after roughly `--history` chapters, always ad hoc across separate
-   sessions.
+   Always the full bundle — there's no fresh-spawn-vs-continuing distinction to manage once
+   there's no subagent; your own conversation already carries everything from earlier chapters
+   this session the same way it carries anything else you've read. `--history` defaults to 30
+   (effectively the whole book — see below on why), read the chapter's `.label` sidecar back and
+   use it as `<chapter_label>` in step 4, same as panel mode.
+3. **Read the bundle yourself and write the analysis in your own reply**, following the same
+   OPENER/STORY_TYPE/SUMMARY/QUALITY/RATING/CHARACTERS/SIDEBAR fields and the same voice
+   (below) the bundle's instructions describe — you're doing the job the subagent used to do,
+   not delegating it. Save your own raw `KEY: value` output to a scratch file so step 4 can parse
+   it the same way it always has.
 4. Record the result (mechanical, no tokens):
    ```
    python toolkit\record_analysis.py <review_root> "<label from step 2's .label file>" <scratch>\analysis_output.txt
@@ -257,20 +263,32 @@ needs to be "launched in parallel" — there's only one thread.
    for this mode's long-run token cost.
 5. Present the result per the output format below.
 
+### Why `--history` defaults to 30 (essentially the whole book) here
+
+Panel mode's `--history` default of 8 exists to keep a subagent's bundle small, because a fresh
+subagent spawn already costs ~45k tokens and every extra chapter of full history stacks on top
+of that. Analyst mode has no subagent tax to protect against, and the user's manuscripts run
+~30ish chapters max per book — so digesting anything down to a title+rating line risks losing a
+payoff or callback to an early chapter's specific beats for essentially no savings that matter
+at this scale. Default to `--history 30` (i.e. full detail for the whole book) and only pass a
+smaller number by hand for an unusually long manuscript where the full chapter log would
+genuinely bloat the prompt.
+
 ## Analyst mode: voice
 
 The analyst has a personality: witty, genuinely engaged with the material, comfortable making
 comps and naming tropes, and **not sycophantic** — no "this is amazing!", no cheerleading, no
-softening a real observation. It's built into `build_analyst_prompt.py`'s `INSTRUCTIONS`, so a
-correctly-run subagent already writes this way; don't flatten it back into a dry report when
-presenting the result. Present the subagent's own text close to verbatim — this mode's whole
-point is that the reply reads like commentary from someone actually paying attention, not a
-form getting filled in.
+softening a real observation. `build_analyst_prompt.py`'s `INSTRUCTIONS` spell this voice out in
+full even though you're the one writing it now, not a subagent — read them as your actual brief
+for the reply, not background flavor text, and don't flatten it back into a dry report. This
+mode's whole point is that the reply reads like commentary from someone actually paying
+attention, not a form getting filled in.
 
 ## Analyst mode: output style
 
-Six parts, in this order, straight from the six fields the subagent returns — this isn't a
-persona block, it's one voice giving a real read:
+Six parts (of the seven fields — SIDEBAR is folded in only when present), in this order,
+straight from what you wrote in step 3 — this isn't a persona block, it's one voice giving a
+real read:
 
 ```
 <OPENER — the witty hook line(s), no header>
@@ -295,13 +313,14 @@ Rating: <RATING>
 
 `SIDEBAR` is the analyst's own off-structure aside — a theory, something that bugged it, a
 question for the author, a detail it loved — anything that didn't fit neatly into the boxes
-above. It's genuinely optional: `record_analysis.py` drops the section entirely when the
-subagent said there was nothing to add (or left it blank), so don't force a "Sidebar" heading
-onto an empty thought just to fill out the shape. When it is present, keep it last, after
-Characters & Relationships, and don't reformat it into the same structured tone as the rest —
-it's supposed to read like the analyst went slightly off-script.
+above. It's genuinely optional: `record_analysis.py` drops the section entirely when there was
+nothing to add (or it was left blank), so don't force a "Sidebar" heading onto an empty thought
+just to fill out the shape. When it is present, keep it last, after Characters & Relationships,
+and don't reformat it into the same structured tone as the rest — it's supposed to read like the
+analyst went slightly off-script.
 
-Present the subagent's field bodies close to verbatim (light cleanup only — stray whitespace,
+Present your own field bodies close to verbatim from what you wrote in step 3 (light cleanup
+only — stray whitespace,
 not rewording); they're already written in voice and may already use bullets/bold internally.
 Only restate STORY_TYPE in full if it changed or this is the first chapter reviewed — otherwise
 a short "(still a corporate-thriller-with-a-body-count, no surprises here)" style aside is more
