@@ -246,6 +246,15 @@ needs to be "launched in parallel" — there's only one thread.
    ```
    python toolkit\record_analysis.py <review_root> "<label from step 2's .label file>" <scratch>\analysis_output.txt
    ```
+   `record_analysis.py` also rebuilds "Running notes" from scratch each time by scanning every
+   `#### Characters & relationships` and `#### Rating` block already in the chapter log plus the
+   new one — mechanically, no extra LLM call. That's what keeps the character roster genuinely
+   *cumulative* (a character absent from this chapter's `CHARACTERS` field isn't dropped from the
+   running roster just because they didn't show up this time) and keeps "Running notes" itself
+   short (a rating trend line instead of a resent copy of the full `QUALITY` paragraph) even as
+   individual chapter entries get long — since Running notes goes into every future bundle in
+   full regardless of `--history`, keeping it compact matters more than any other single field
+   for this mode's long-run token cost.
 5. Present the result per the output format below.
 
 ## Analyst mode: voice

@@ -43,12 +43,99 @@ def parse_output(text: str) -> tuple[dict, list[str]]:
     return values, missing
 
 
-def render_running_notes(v: dict) -> str:
+CHAR_BULLET_RE = re.compile(r"^-\s+\*\*(.+?)\*\*\s*(.*)$")
+DYNAMICS_START_RE = re.compile(r"^-\s+\*\*relationship dynamics\*\*", re.IGNORECASE)
+RATING_RE = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*10")
+CHAPTER_ENTRY_RE = re.compile(r"^### (.+)$", re.MULTILINE)
+CHARACTERS_SECTION_RE = re.compile(
+    r"#### Characters & relationships\n(.*?)(?=\n#### |\n### |\Z)", re.DOTALL
+)
+RATING_SECTION_RE = re.compile(r"#### Rating\n(.*?)(?=\n#### |\n### |\Z)", re.DOTALL)
+
+
+def parse_character_field(characters_text: str) -> tuple[dict, list[str], str]:
+    """Split a CHARACTERS field's raw text into {name: bullet line} plus first-seen order, and
+    the trailing 'relationship dynamics' block (if any) as one block of text. Mechanical parse
+    only - no LLM call - this is what lets the roster be genuinely cumulative without resending
+    every character's full history through the model each chapter."""
+    chars, order, dynamics = {}, [], []
+    in_dynamics = False
+    for raw_line in characters_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if DYNAMICS_START_RE.match(line) or line.lower().startswith("relationship dynamics"):
+            in_dynamics = True
+            dynamics.append(line)
+            continue
+        if in_dynamics:
+            dynamics.append(line)
+            continue
+        m = CHAR_BULLET_RE.match(line)
+        if m:
+            name = m.group(1).strip()
+            if name not in chars:
+                order.append(name)
+            chars[name] = line
+        elif chars:
+            # a wrapped continuation of the previous character's bullet
+            last = order[-1]
+            chars[last] = chars[last] + " " + line
+    return chars, order, "\n".join(dynamics)
+
+
+def build_cumulative_roster(existing_text: str, new_chapter_label: str, new_characters: str) -> str:
+    """Rebuild the full cumulative character roster by scanning every '#### Characters &
+    relationships' block already in the chapter log plus the one just produced, oldest to
+    newest, so a later chapter's bullet for a name overwrites an earlier one but characters
+    absent from the newest chapter are NOT dropped. Dynamics block: keep only the most recent
+    chapter's, since relationship *state* (not history) is what's useful in a running digest."""
+    chars, order = {}, []
+    dynamics = ""
+    for m in CHARACTERS_SECTION_RE.finditer(existing_text):
+        c_chars, c_order, c_dynamics = parse_character_field(m.group(1))
+        for name in c_order:
+            if name not in chars:
+                order.append(name)
+            chars[name] = c_chars[name]
+        if c_dynamics:
+            dynamics = c_dynamics
+    c_chars, c_order, c_dynamics = parse_character_field(new_characters)
+    for name in c_order:
+        if name not in chars:
+            order.append(name)
+        chars[name] = c_chars[name]
+    if c_dynamics:
+        dynamics = c_dynamics
+    lines = [chars[name] for name in order]
+    if dynamics:
+        lines.append(dynamics)
+    return "\n  ".join(lines) if lines else new_characters
+
+
+def build_rating_trend(existing_text: str, new_rating: str) -> str:
+    """Mechanical rating trend (latest + running average) computed from every '#### Rating'
+    block already logged plus the new one - replaces resending a full QUALITY paragraph into
+    Running notes every chapter, which was the main source of bloat there."""
+    ratings = [float(m.group(1)) for sec in RATING_SECTION_RE.finditer(existing_text)
+               for m in RATING_RE.finditer(sec.group(1))]
+    new_nums = [float(m.group(1)) for m in RATING_RE.finditer(new_rating)]
+    ratings += new_nums
+    latest = new_nums[0] if new_nums else (ratings[-1] if ratings else None)
+    if latest is None:
+        return new_rating.splitlines()[0] if new_rating else ""
+    avg = sum(ratings) / len(ratings)
+    return f"{latest:g}/10 latest (avg so far: {avg:.1f}/10 over {len(ratings)} chapter{'s' if len(ratings) != 1 else ''})"
+
+
+def render_running_notes(existing_text: str, chapter_label: str, v: dict) -> str:
+    roster = build_cumulative_roster(existing_text, chapter_label, v["CHARACTERS"])
+    trend = build_rating_trend(existing_text, v["RATING"])
     return (
         "## Running notes\n"
         f"- Story type (current read): {v['STORY_TYPE']}\n"
-        f"- Quality trend: {v['QUALITY']}\n"
-        f"- Character roster & relationships (cumulative): {v['CHARACTERS']}\n"
+        f"- Quality trend: {trend}\n"
+        f"- Character roster & relationships (cumulative):\n  {roster}\n"
     )
 
 
@@ -80,9 +167,10 @@ def update_living_reference(lr_path: Path, chapter_label: str, v: dict, missing:
     if "## Running notes" in text and "## Chapter log" in text:
         before, _, rest = text.partition("## Running notes")
         _, _, after_log_heading = rest.partition("## Chapter log")
+        existing_log = after_log_heading  # prior chapter entries only, for the roster/trend scan
         new_text = (
             before
-            + render_running_notes(v)
+            + render_running_notes(existing_log, chapter_label, v)
             + "\n## Chapter log"
             + after_log_heading.rstrip("\n")
             + "\n\n"
