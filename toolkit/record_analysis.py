@@ -14,20 +14,25 @@ import re
 import sys
 from pathlib import Path
 
-FIELDS = ["STORY_TYPE", "SUMMARY", "QUALITY", "RATING", "CHARACTERS"]
+FIELDS = ["OPENER", "STORY_TYPE", "SUMMARY", "QUALITY", "RATING", "CHARACTERS"]
 KEY_RE = re.compile(r"^([A-Z_]+):\s*(.*)$")
 
 
 def parse_output(text: str) -> tuple[dict, list[str]]:
+    """Fields can run multi-line (paragraphs, bullet lists) - a line only starts a new field
+    when it matches KEY: at the very start; everything else, blank lines included, is appended
+    to whichever field is currently open so bullet structure and paragraph breaks survive."""
     values = {k: "" for k in FIELDS}
     current = None
     for line in text.splitlines():
-        m = KEY_RE.match(line.strip())
+        m = KEY_RE.match(line)
         if m and m.group(1) in FIELDS:
             current = m.group(1)
             values[current] = m.group(2).strip()
-        elif current and line.strip():
-            values[current] = (values[current] + " " + line.strip()).strip()
+        elif current is not None:
+            values[current] = (values[current] + "\n" + line.rstrip()).strip("\n") if values[current] else line.rstrip()
+    for k in FIELDS:
+        values[k] = values[k].strip()
     missing = [k for k in FIELDS if not values[k]]
     if missing:
         sys.stderr.write(f"Warning: missing/empty fields in output: {', '.join(missing)}\n")
@@ -47,18 +52,20 @@ def render_chapter_entry(chapter_label: str, v: dict, missing: list[str]) -> str
     flag = ""
     if len(missing) >= 2:
         flag = (
-            f"⚠ _Possibly malformed reply - {len(missing)}/5 fields were missing "
-            f"({', '.join(missing)}). Worth a manual look._\n"
+            f"⚠ _Possibly malformed reply - {len(missing)}/6 fields were missing "
+            f"({', '.join(missing)}). Worth a manual look._\n\n"
         )
-    return (
-        f"### {chapter_label}\n"
-        + flag
-        + f"Story type: {v['STORY_TYPE']}\n"
-        f"Summary: {v['SUMMARY']}\n"
-        f"Writing quality: {v['QUALITY']}\n"
-        f"Rating: {v['RATING']}\n"
-        f"Characters & relationships: {v['CHARACTERS']}\n"
-    )
+    parts = [f"### {chapter_label}", flag.rstrip("\n")] if flag else [f"### {chapter_label}"]
+    if v["OPENER"]:
+        parts.append(v["OPENER"])
+    parts += [
+        f"#### What kinda story is this?\n{v['STORY_TYPE']}",
+        f"#### Summary\n{v['SUMMARY']}",
+        f"#### Writing quality\n{v['QUALITY']}",
+        f"#### Rating\n{v['RATING']}",
+        f"#### Characters & relationships\n{v['CHARACTERS']}",
+    ]
+    return "\n\n".join(p for p in parts if p.strip()) + "\n"
 
 
 def update_living_reference(lr_path: Path, chapter_label: str, v: dict, missing: list[str]):

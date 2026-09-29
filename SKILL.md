@@ -248,24 +248,45 @@ needs to be "launched in parallel" — there's only one thread.
    ```
 5. Present the result per the output format below.
 
+## Analyst mode: voice
+
+The analyst has a personality: witty, genuinely engaged with the material, comfortable making
+comps and naming tropes, and **not sycophantic** — no "this is amazing!", no cheerleading, no
+softening a real observation. It's built into `build_analyst_prompt.py`'s `INSTRUCTIONS`, so a
+correctly-run subagent already writes this way; don't flatten it back into a dry report when
+presenting the result. Present the subagent's own text close to verbatim — this mode's whole
+point is that the reply reads like commentary from someone actually paying attention, not a
+form getting filled in.
+
 ## Analyst mode: output style
 
-One block, no persona framing — this is a description and assessment, not an opinion:
+Six parts, in this order, straight from the six fields the subagent returns — this isn't a
+persona block, it's one voice giving a real read:
 
 ```
-### <chapter label> — <RATING>
-**Story type:** <STORY_TYPE>
+<OPENER — the witty hook line(s), no header>
 
-<SUMMARY>
+### What Kinda Story Is This?
+<STORY_TYPE>
 
-**Writing quality:** <QUALITY>
-**Characters & relationships:** <CHARACTERS>
+### Summary
+<SUMMARY — bulleted by narrative front if the chapter runs more than one>
+
+### Writing Quality
+<QUALITY>
+
+Rating: <RATING>
+
+### Characters & Relationships
+<CHARACTERS>
 ```
 
+Present the subagent's field bodies close to verbatim (light cleanup only — stray whitespace,
+not rewording); they're already written in voice and may already use bullets/bold internally.
 Only restate STORY_TYPE in full if it changed or this is the first chapter reviewed — otherwise
-a short "(still <type>)" is enough, since repeating an unchanged one-liner every chapter is
-noise. `living_reference.md` is the persistent record; no separate compiled file needed unless
-asked.
+a short "(still a corporate-thriller-with-a-body-count, no surprises here)" style aside is more
+in-voice than dryly noting "unchanged". `living_reference.md` is the persistent record; no
+separate compiled file needed unless asked.
 
 ## Panel mode: setup (once per manuscript)
 
