@@ -1,16 +1,29 @@
 ---
 name: beta-reader-panel
-description: Simulates a panel of 2-3 distinct beta readers (randomly picked from an 11-persona roster spanning teens, young-adult, adult, middle-aged, older, genre-superfan, casual, and craft-critic readers) reading the user's manuscripts chapter by chapter, each reviewed by its own subagent for genuine context isolation so none of them bias each other. Use when the user wants beta-reader reactions, reader feedback, or "what would readers think" on a chapter/manuscript — as opposed to the manuscript-editor skill, which does line-editing/copyediting, not reader reactions.
+description: Reviews the user's manuscripts chapter by chapter, in one of two modes. Lightweight/analyst mode (the default): a single continuously-updated story analysis — story type, detailed chapter summary, writing quality + rating, characters/relationships — no personas, no panel setup. Panel mode: 2-3 distinct in-character beta readers (randomly picked from an 11-persona roster spanning teens, young-adult, adult, middle-aged, older, genre-superfan, casual, and craft-critic readers), each reviewed by its own subagent for genuine context isolation so none of them bias each other. Use when the user wants a chapter summary/quality read, beta-reader reactions, reader feedback, or "what would readers think" on a chapter/manuscript — as opposed to the manuscript-editor skill, which does line-editing/copyediting, not reading/reviewing.
 ---
 
 # Beta reader panel
 
-Simulates several different readers independently reading the same manuscript, chapter by
-chapter, the way a real author would run parallel beta readers to avoid one opinion anchoring
-the others. This is **reader reaction, not editing** — no line edits, no prose fixes, no craft
+Reviews a manuscript chapter by chapter. Two modes, same toolkit family:
+
+- **Analyst mode (lightweight, default)** — one continuously-updated read: what kind of story
+  this is, a detailed summary of the chapter, an honest read on writing quality + a rating, and
+  who's involved / how relationships stand. No in-character opinions, no panel setup, one
+  Sonnet subagent. Reach for this whenever the user just wants a chapter-by-chapter record and
+  quality read, not simulated reader reactions — it's cheaper and faster to start (no panel
+  roll) and is the right default unless the user specifically wants reader reactions.
+- **Panel mode** — several different readers independently reacting to the same manuscript, the
+  way a real author would run parallel beta readers to avoid one opinion anchoring the others.
+  Use when the user explicitly wants reader reactions / "what would readers think" / multiple
+  perspectives.
+
+Both modes are **reading/analysis, not editing** — no line edits, no prose fixes, no craft
 prescriptions. If the user wants that, point them to the `manuscript-editor` skill instead.
 
-Toolkit lives in this skill's own folder: `toolkit/select_panel.py`, `toolkit/personas/*.md`,
+Toolkit lives in this skill's own folder. Analyst mode: `toolkit/init_analyst.py`,
+`toolkit/analyst_reference_template.md`, `toolkit/build_analyst_prompt.py`,
+`toolkit/record_analysis.py`. Panel mode: `toolkit/select_panel.py`, `toolkit/personas/*.md`,
 `toolkit/living_reference_template.md`, `toolkit/build_persona_prompt.py`,
 `toolkit/record_reaction.py`. Reads manuscripts using the `manuscript-editor` skill's
 `nw_tool.py` (`$env:USERPROFILE\.claude\skills\manuscript-editor\toolkit\nw_tool.py`) — this
@@ -42,21 +55,36 @@ whole setup has to fit in one round trip — don't turn this into a multi-questi
    question entirely and treat it as already answered; don't ask something you can already infer.
    If you're aware of a known manuscripts folder for this user, glance at it and offer a short
    list of likely candidates rather than a blank "where is it?" — faster to answer than free text.
+   Don't ask which mode in this same message unless the user's phrasing is genuinely ambiguous
+   (see "Picking a mode" below) — defaulting silently to analyst mode is fine and faster.
 2. **The moment you have the manuscript** (the user's next message, at the latest), do
    everything below in that same turn, with no further questions unless something is genuinely
    ambiguous (the name matches more than one manuscript, or the path doesn't exist):
    - Resolve the manuscript type the same way `nw_tool.py` does (directory with `nwProject.nwx`
      vs a `.md` file).
-   - Run `select_panel.py` against it — picks a panel if none exists yet for this manuscript,
-     or reports the existing one if it's already set up.
+   - **Analyst mode (default):** run `init_analyst.py` against it — creates
+     `_story_analysis/living_reference.md` if it doesn't exist yet, or is a no-op if it does.
+   - **Panel mode (only if the user asked for reader reactions/personas):** run `select_panel.py`
+     against it — picks a panel if none exists yet for this manuscript, or reports the existing
+     one if it's already set up.
    - Pick the starting chapter: use whatever the user named, or default to the manuscript's own
      first chapter (`list`/`flat-list`) and just say plainly that's where you're starting — a
      one-line thing to correct, not a blocking question.
-   - Immediately run the full build → generate → record loop (below) for that chapter across
-     the selected panel, and present the results.
+   - Immediately run the full build → generate → record loop for that chapter in whichever mode
+     applies, and present the results.
 
-No "should I start?", no "does this panel look right?" checkpoint in between — panel selection
-and the first chapter's reviews happen in the same turn once the manuscript is known.
+No "should I start?", no "does this panel look right?" checkpoint in between — setup and the
+first chapter's review happen in the same turn once the manuscript is known.
+
+### Picking a mode
+
+Default to **analyst mode** — it's what most requests to "review my chapter" or "go through my
+manuscript" actually want, it's cheaper (one subagent, no panel roll), and it's easy to switch
+into panel mode later without losing anything (the two modes keep entirely separate reference
+files, `_story_analysis/` vs `_beta_reviews/`, so nothing needs to be redone). Switch to **panel
+mode** only when the user's own words ask for reader reactions, opinions, "what would readers
+think", beta readers, or personas specifically — not just "review". If genuinely unsure which
+the user wants, ask once, but don't default to asking.
 
 ## The hard rule: real isolation, not just discipline
 
@@ -181,7 +209,65 @@ where there's no batch to amortize across.
   of truth, updated every single chapter regardless of which mode produced the reaction, is what
   makes any of this durable across weeks or months of on-and-off reviewing.
 
-## Setup (once per manuscript)
+## Analyst mode: setup (once per manuscript)
+
+Run the initializer — safe to re-run, it's a no-op if the reference already exists:
+```
+python $env:USERPROFILE\.claude\skills\beta-reader-panel\toolkit\init_analyst.py <manuscript_dir>
+```
+This creates `_story_analysis/living_reference.md` from the template. There's no roster, no
+random pick, nothing to lock in — just the one file that gets updated every chapter.
+
+## Analyst mode: per-chapter loop
+
+Same shape as panel mode's loop but with exactly one subagent instead of N, so nothing here
+needs to be "launched in parallel" — there's only one thread.
+
+1. Fetch the chapter (`nw_tool.py get`/`flat-get`) into a scratch file, same as panel mode.
+2. Build the bundle:
+   ```
+   python toolkit\build_analyst_prompt.py <review_root> <chapter_source> <chapter_ref> --chapter-file <scratch>\chapter.txt --out <scratch>\analysis_bundle.txt
+   ```
+   Full bundle (no `--continuing`) for the first chapter of a batch or session; `--continuing`
+   for every following chapter while the subagent from step 3 is still alive. Use `--history N`
+   the same way panel mode does (default 8). As with panel mode, always read the chapter's
+   `.label` sidecar back and use it as `<chapter_label>` in step 4 — never hand-type a label.
+3. **Read the bundle file yourself and paste its full text into the `Agent` prompt** — same
+   rationale as panel mode: never tell the subagent to go read the bundle itself, that turns one
+   completion into an agentic loop. Spawn with `model: sonnet` (this mode doesn't need Opus —
+   it's a straight descriptive read, not judging craft against genre peers the way `craft_critic`
+   does) and keep the subagent's own reasoning brief: this is a direct analytical pass, not a
+   puzzle to reason through at length — say so in the spawn if the harness is inclined to overthink
+   a plain description task. Keep track of the returned agent id for the rest of the batch, same
+   reuse/refresh rules as panel mode's "Long-lived vs ad hoc" section — reuse across chapters in
+   a batch, retire and respawn after roughly `--history` chapters, always ad hoc across separate
+   sessions.
+4. Record the result (mechanical, no tokens):
+   ```
+   python toolkit\record_analysis.py <review_root> "<label from step 2's .label file>" <scratch>\analysis_output.txt
+   ```
+5. Present the result per the output format below.
+
+## Analyst mode: output style
+
+One block, no persona framing — this is a description and assessment, not an opinion:
+
+```
+### <chapter label> — <RATING>
+**Story type:** <STORY_TYPE>
+
+<SUMMARY>
+
+**Writing quality:** <QUALITY>
+**Characters & relationships:** <CHARACTERS>
+```
+
+Only restate STORY_TYPE in full if it changed or this is the first chapter reviewed — otherwise
+a short "(still <type>)" is enough, since repeating an unchanged one-liner every chapter is
+noise. `living_reference.md` is the persistent record; no separate compiled file needed unless
+asked.
+
+## Panel mode: setup (once per manuscript)
 
 Run the panel selector — safe to re-run, it won't re-roll an existing panel:
 ```
@@ -195,7 +281,7 @@ earlier reactions become impossible to compare against later ones. If the user e
 for specific personas instead of random ones, pass `--personas slug1,slug2[,slug3]` (2 or 3
 slugs, comma-separated) rather than constructing the panel files by hand.
 
-## Per-chapter loop
+## Panel mode: per-chapter loop
 
 1. Fetch the chapter once (step 0 above).
 2. Build every active persona's bundle (step 1) — full bundle (no `--continuing`) if this is
@@ -210,7 +296,7 @@ slugs, comma-separated) rather than constructing the panel files by hand.
    persona's take before the others are in, since isolation is already guaranteed by
    construction at that point.
 
-## Output style
+## Panel mode: output style
 
 Keep it to the point: short in-character reactions and a rating, not long-form analysis. Use
 this exact shape for presenting a chapter's panel results, one block per persona, in the same
